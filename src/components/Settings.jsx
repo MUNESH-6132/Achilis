@@ -2,10 +2,9 @@ import React, { useMemo, useState } from 'react';
 import { useAchilles } from '../context/AchillesContext';
 import { useAuth } from '../context/AuthContext';
 import { formatMonthDay, getTodayDateString } from '../utils/helpers';
-import { Check, Clock, Download, Film, Settings as SettingsIcon, Trash, Upload } from './Icons';
+import { Check, Clock, Download, Settings as SettingsIcon, Trash, Upload } from './Icons';
 
 const CARD_CLASS = "rounded-3xl border border-line bg-surface p-6 sm:p-8";
-const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-white placeholder:text-muted/60 outline-none transition focus:border-accent/70 focus:ring-2 focus:ring-accent/10";
 const BUTTON_PRIMARY = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-ink transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50";
 const BUTTON_SECONDARY = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-semibold text-white/85 transition hover:border-accent/50 hover:bg-surface2 disabled:cursor-not-allowed disabled:opacity-50";
 
@@ -125,18 +124,6 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
   const [signOutBusy, setSignOutBusy] = useState(false);
   const [syncBusy, setSyncBusy] = useState(false);
   const [cloudActionMessage, setCloudActionMessage] = useState("");
-  const [savedTmdbKey] = useState(() => {
-    try {
-      return { value: localStorage.getItem("achilles:tmdbKey") || "", error: false };
-    } catch {
-      return { value: "", error: true };
-    }
-  });
-  const [tmdbKey, setTmdbKey] = useState(savedTmdbKey.value);
-  const [tmdbMessage, setTmdbMessage] = useState(
-    savedTmdbKey.error ? "Could not read the saved API key from this browser." : ""
-  );
-  const [tmdbTesting, setTmdbTesting] = useState(false);
 
   const pomo = useMemo(
     () => [...(Array.isArray(data.pomo) ? data.pomo : [])]
@@ -212,41 +199,6 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
     replaceAll({ user: data.user, pin: data.pin });
   };
 
-  const saveTmdbKey = event => {
-    event.preventDefault();
-    const key = String(tmdbKey).trim();
-    try {
-      if (key) localStorage.setItem("achilles:tmdbKey", key);
-      else localStorage.removeItem("achilles:tmdbKey");
-      setTmdbMessage(key ? "API key saved on this device." : "API key cleared.");
-    } catch {
-      setTmdbMessage("Could not save the key on this device.");
-    }
-  };
-
-  const testTmdbKey = async () => {
-    const key = String(tmdbKey).trim();
-    if (!key) {
-      setTmdbMessage("Enter an API key before testing it.");
-      return;
-    }
-    setTmdbTesting(true);
-    setTmdbMessage("");
-    try {
-      const response = await fetch(`https://api.themoviedb.org/3/search/multi?query=Dune&api_key=${encodeURIComponent(key)}`);
-      if (response.status === 200) {
-        const result = await response.json();
-        setTmdbMessage(`Connection successful. Found ${(result.results || []).length} results for Dune.`);
-      } else {
-        setTmdbMessage(response.status === 401 ? "401 Unauthorized — the API key is invalid." : `Request failed with HTTP ${response.status}.`);
-      }
-    } catch {
-      setTmdbMessage("Could not reach TMDB. Check your connection and try again.");
-    } finally {
-      setTmdbTesting(false);
-    }
-  };
-
   const stats = [
     { label: "Today", value: todayMinutes },
     { label: "Last 7 days", value: weekMinutes },
@@ -310,31 +262,6 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
               );
             })}
           </div>
-        </section>
-
-        <section className={CARD_CLASS}>
-          <SectionHeading
-            Icon={Film}
-            title="Entertainment API"
-            description="Add a TMDB API key to search for movie and series details."
-          />
-          <form onSubmit={saveTmdbKey} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-            <label className="sr-only" htmlFor="tmdb-api-key">TMDB API key</label>
-            <input
-              id="tmdb-api-key"
-              className={INPUT_CLASS}
-              type="password"
-              autoComplete="off"
-              value={tmdbKey}
-              onChange={event => { setTmdbKey(event.target.value); setTmdbMessage(""); }}
-              placeholder="Paste your TMDB API key"
-            />
-            <button type="submit" className={BUTTON_PRIMARY}>Save Key</button>
-            <button type="button" onClick={testTmdbKey} disabled={tmdbTesting} className={BUTTON_SECONDARY}>
-              {tmdbTesting ? "Testing…" : "Test Connection"}
-            </button>
-          </form>
-          {tmdbMessage && <p role="status" className="mt-3 text-xs text-muted">{tmdbMessage}</p>}
         </section>
 
         <section className={CARD_CLASS}>

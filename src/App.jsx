@@ -13,6 +13,7 @@ import { SplashScreen } from './components/SplashScreen';
 import { Splash } from './components/Splash';
 import { DiaryEditor } from './components/DiaryEditor';
 import { NoteEditor } from './components/NoteEditor';
+import { UserMenu } from './components/UserMenu';
 import { Search, Download, Upload, BookOpen, Play as Film, Edit, Grid as SettingsIcon } from './components/Icons';
 import { getTodayDateString, generateId, getToday } from './utils/helpers';
 
@@ -221,7 +222,10 @@ const AppContent = () => {
             ))}
           </nav>
           
-          <button onClick={cycleTheme} className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-sm text-muted transition hover:border-accent/60 hover:text-accent" title="Cycle theme">◐</button>
+          <div className="ml-auto flex items-center gap-2">
+            <button onClick={cycleTheme} className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-sm text-muted transition hover:border-accent/60 hover:text-accent" title="Cycle theme">◐</button>
+            <UserMenu onSettings={() => setSpace('settings')} />
+          </div>
         </div>
       </header>
 

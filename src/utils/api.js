@@ -1,6 +1,7 @@
 const OPEN_LIBRARY = "https://openlibrary.org";
 const COVERS = "https://covers.openlibrary.org/b";
 const GOOGLE_BOOKS = "https://www.googleapis.com/books/v1/volumes";
+const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY?.trim() || "";
 
 async function fetchJson(url, options = {}) {
   const controller = new AbortController();
@@ -81,18 +82,13 @@ export async function fetchChapters(book) {
 }
 
 // --- MOVIES & TV (TMDB) ---
-function getTmdbKey() {
-  try {
-    const k = String(localStorage.getItem("achilles:tmdbKey") || "").trim();
-    return (!k || k.length < 20 || /\s/.test(k) || /^eyJ/i.test(k)) ? "" : k;
-  } catch { return ""; }
-}
-
 export async function tmdbSuggest(query) {
-  const key = getTmdbKey();
-  if (!key) return []; // Silently return empty if no key
+  if (!TMDB_API_KEY) {
+    console.warn("TMDB search unavailable: VITE_TMDB_API_KEY is not configured.");
+    return [];
+  }
   
-  const url = `https://api.themoviedb.org/3/search/multi?include_adult=false&query=${encodeURIComponent(query)}&api_key=${key}`;
+  const url = `https://api.themoviedb.org/3/search/multi?include_adult=false&query=${encodeURIComponent(query)}&api_key=${encodeURIComponent(TMDB_API_KEY)}`;
   try {
     const res = await fetchJson(url);
     return (res.results || [])
@@ -115,9 +111,11 @@ export async function tmdbSuggest(query) {
 }
 
 export async function tmdbDetails(mt, id) {
-  const key = getTmdbKey();
-  if (!key) throw new Error("TMDB: no valid key");
-  const url = `https://api.themoviedb.org/3/${mt}/${id}?append_to_response=credits,watch/providers&api_key=${key}`;
+  if (!TMDB_API_KEY) {
+    console.warn("TMDB details unavailable: VITE_TMDB_API_KEY is not configured.");
+    throw new Error("TMDB is not configured. Please try again later.");
+  }
+  const url = `https://api.themoviedb.org/3/${mt}/${id}?append_to_response=credits,watch/providers&api_key=${encodeURIComponent(TMDB_API_KEY)}`;
   const r = await fetchJson(url);
   
   const dir = mt === "movie" 
