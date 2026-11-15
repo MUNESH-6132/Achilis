@@ -11,7 +11,7 @@ import { fetchChapters } from '../utils/api';
 const MILESTONES = [25, 50, 75, 100];
 const BTN_PRIMARY = "inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15";
 const BTN_ACCENT = "inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-bold text-ink transition hover:bg-accent/90";
-const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-muted/50 focus:border-accent/70 focus:outline-none";
+const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-accent/70 focus:outline-none";
 
 export function BookDetails({ book, onClose, onEdit }) {
   const { data, update } = useAchilles();

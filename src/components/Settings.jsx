@@ -5,6 +5,7 @@ import { formatMonthDay, getTodayDateString } from '../utils/helpers';
 import { Check, Clock, Download, Settings as SettingsIcon, Trash, Upload } from './Icons';
 
 const CARD_CLASS = "rounded-3xl border border-line bg-surface p-6 sm:p-8";
+const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-accent/70 focus:outline-none";
 const BUTTON_PRIMARY = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-ink transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50";
 const BUTTON_SECONDARY = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-semibold text-white/85 transition hover:border-accent/50 hover:bg-surface2 disabled:cursor-not-allowed disabled:opacity-50";
 

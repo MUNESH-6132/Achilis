@@ -10,7 +10,7 @@ const BUTTON_BASE = "inline-flex items-center justify-center gap-2 rounded-full 
 const BUTTON_PRIMARY = `${BUTTON_BASE} bg-accent px-4 py-2.5 text-ink hover:bg-[#ff6a1f] hover:shadow-[0_12px_30px_-12px_#ff5500] active:scale-[.98]`;
 const BUTTON_SECONDARY = `${BUTTON_BASE} border border-line px-4 py-2.5 text-white/80 hover:border-accent/60 hover:bg-white/[0.04] hover:text-white active:scale-[.98]`;
 const BUTTON_SUBTLE = `${BUTTON_BASE} bg-surface2 px-3.5 py-2 text-white/70 hover:bg-[#2a2a2a] hover:text-white`;
-const INPUT_CLASS = "w-full rounded-2xl border border-line bg-surface2 px-4 py-2.5 text-sm text-white placeholder:text-white/25 transition focus:border-accent/70 focus:bg-surface2";
+const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-accent/70 focus:outline-none";
 const STATUS_OPTIONS = ["Watched", "In progress", "Watchlist"];
 
 function Field({ label, children }) {

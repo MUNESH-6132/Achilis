@@ -14,7 +14,7 @@ const MOODS = [
   { value: 5, emoji: "😄", label: "Great" }
 ];
 
-const INPUT_CLASS = "w-full rounded-xl border border-line bg-surface2 px-4 py-2.5 text-sm text-white placeholder:text-white/25 transition focus:border-accent/70 focus:bg-surface2";
+const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-accent/70 focus:outline-none";
 const BUTTON_PRIMARY = "inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition duration-200 hover:bg-[#ff6a1f] active:scale-[.98]";
 const BUTTON_SECONDARY = "inline-flex items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-semibold text-white/80 transition duration-200 hover:border-accent/60 hover:bg-white/[0.04] hover:text-white active:scale-[.98]";
 const MEDIA_FIELDS = ['video', 'audio', 'photo'];
