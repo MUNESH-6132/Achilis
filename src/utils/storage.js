@@ -1,6 +1,7 @@
 import { SCHEMA_VERSION, defaultState } from './defaults';
 import { idbGet, idbSet } from './db';
 import { sanitizeState } from './sanitize';
+import { supabase } from './supabaseClient';
 
 export const STORAGE_KEY = 'achilles:v1';
 
@@ -48,6 +49,43 @@ export async function saveStateAsync(state) {
   } catch {
     return false;
   }
+}
+
+export function toCloudState(state) {
+  const diary = Array.isArray(state?.diary)
+    ? state.diary.map(entry => {
+        const cloudEntry = { ...entry };
+        for (const field of ['photo', 'audio', 'video']) {
+          if (typeof cloudEntry[field] === 'string' && cloudEntry[field].startsWith('data:')) {
+            cloudEntry[field] = null;
+          }
+        }
+        return cloudEntry;
+      })
+    : [];
+  return { ...state, diary };
+}
+
+export async function saveCloudStateAsync(userId, state) {
+  if (!supabase) {
+    throw new Error('Cloud sync is not configured.');
+  }
+  if (!userId) {
+    throw new Error('Sign in before syncing data.');
+  }
+
+  const cloudData = toCloudState(state);
+  const updatedAt = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('user_data')
+    .upsert(
+      { user_id: userId, data: cloudData, updated_at: updatedAt },
+      { onConflict: 'user_id' },
+    )
+    .select('updated_at')
+    .single();
+  if (error) throw error;
+  return { data: cloudData, updatedAt: data?.updated_at || updatedAt };
 }
 
 /**

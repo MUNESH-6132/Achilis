@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAchilles } from '../context/AchillesContext';
+import { useAuth } from '../context/AuthContext';
 import { countWords, formatMonthDay, generateId, getCurrentTime, getToday, parseTags } from '../utils/helpers';
+import { uploadMediaToSupabase } from '../utils/media';
 import { Modal } from './Modal';
 import { Edit, Trash, X } from './Icons';
 
@@ -15,6 +17,11 @@ const MOODS = [
 const INPUT_CLASS = "w-full rounded-xl border border-line bg-surface2 px-4 py-2.5 text-sm text-white placeholder:text-white/25 transition focus:border-accent/70 focus:bg-surface2";
 const BUTTON_PRIMARY = "inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition duration-200 hover:bg-[#ff6a1f] active:scale-[.98]";
 const BUTTON_SECONDARY = "inline-flex items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-semibold text-white/80 transition duration-200 hover:border-accent/60 hover:bg-white/[0.04] hover:text-white active:scale-[.98]";
+const MEDIA_FIELDS = ['video', 'audio', 'photo'];
+
+function isDataUrl(value) {
+  return typeof value === 'string' && value.startsWith('data:');
+}
 
 function createEntry(entry) {
   return {
@@ -30,11 +37,14 @@ function createEntry(entry) {
 }
 
 export function DiaryEditor({ entry, onClose, onSave }) {
-  const { data, update } = useAchilles();
+  const { data, notify, update } = useAchilles();
+  const { user } = useAuth();
   const [form, setForm] = useState(() => createEntry(entry));
   const onSaveRef = useRef(onSave);
+  const uploadingRef = useRef(false);
   const [message, setMessage] = useState("");
   const [savedAt, setSavedAt] = useState(0);
+  const [uploading, setUploading] = useState(false);
   const [listening, setListening] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [recordingKind, setRecordingKind] = useState(null);
@@ -56,16 +66,24 @@ export function DiaryEditor({ entry, onClose, onSave }) {
     onSaveRef.current = onSave;
   }, [onSave]);
 
-  const commit = useCallback(() => {
-    if (!form.title.trim() && !form.body.trim() && !form.photo && !form.audio && !form.video) return false;
+  const persistEntry = useCallback((source, { includeInlineMedia = false } = {}) => {
+    if (!source.title.trim() && !source.body.trim() && !source.photo && !source.audio && !source.video) return false;
+    const existingEntry = data.diary.find(item => item.id === source.id);
     const savedEntry = {
-      ...form,
-      title: form.title.trim() || "Untitled",
-      tags: parseTags(form.tags).join(", "),
-      content: form.body,
-      createdAt: Number(form.createdAt) || Date.now(),
+      ...source,
+      title: source.title.trim() || "Untitled",
+      tags: parseTags(source.tags).join(", "),
+      content: source.body,
+      createdAt: Number(source.createdAt) || Date.now(),
       updated: Date.now(),
     };
+    if (!includeInlineMedia) {
+      for (const field of MEDIA_FIELDS) {
+        if (isDataUrl(savedEntry[field])) {
+          savedEntry[field] = existingEntry?.[field] || '';
+        }
+      }
+    }
 
     if (onSaveRef.current) {
       onSaveRef.current(savedEntry);
@@ -78,20 +96,69 @@ export function DiaryEditor({ entry, onClose, onSave }) {
       }));
     }
     return true;
-  }, [form, update]);
+  }, [data.diary, update]);
 
-  const close = () => {
-    commit();
+  const commit = useCallback(() => persistEntry(form), [form, persistEntry]);
+
+  const save = async ({ closeWhenEmpty = false } = {}) => {
+    if (uploadingRef.current) return;
+    const hasContent = Boolean(
+      form.title.trim() || form.body.trim() || form.photo || form.audio || form.video,
+    );
+    if (!hasContent) {
+      if (closeWhenEmpty) onClose();
+      else setMessage("Add a line, a title, or some media first.");
+      return;
+    }
+
+    uploadingRef.current = true;
+    setUploading(true);
+    setMessage('');
+    const preparedEntry = { ...form };
+    let uploadError;
+    try {
+      for (const field of MEDIA_FIELDS) {
+        if (isDataUrl(preparedEntry[field])) {
+          preparedEntry[field] = await uploadMediaToSupabase(
+            preparedEntry[field],
+            user?.id,
+            field,
+          );
+        }
+      }
+    } catch (error) {
+      uploadError = error;
+    }
+
+    if (uploadError?.code === 'MEDIA_TOO_LARGE') {
+      setForm(preparedEntry);
+      setMessage(uploadError.message);
+      uploadingRef.current = false;
+      setUploading(false);
+      return;
+    }
+
+    try {
+      if (uploadError) {
+        persistEntry(preparedEntry, { includeInlineMedia: true });
+        notify('Media upload failed. The entry was saved locally; its inline media has not been synced.');
+      } else {
+        persistEntry(preparedEntry);
+      }
+    } catch (error) {
+      setMessage(error?.message || 'Could not save this diary entry.');
+      notify('Could not save the diary entry. Your unsaved form is still open.');
+      uploadingRef.current = false;
+      setUploading(false);
+      return;
+    }
+    uploadingRef.current = false;
+    setUploading(false);
     onClose();
   };
 
-  const save = () => {
-    if (!form.title.trim() && !form.body.trim() && !form.photo && !form.audio && !form.video) {
-      setMessage("Add a line, a title, or some media first.");
-      return;
-    }
-    commit();
-    onClose();
+  const close = () => {
+    void save({ closeWhenEmpty: true });
   };
 
   const deleteEntry = () => {
@@ -239,8 +306,8 @@ export function DiaryEditor({ entry, onClose, onSave }) {
           const blob = new Blob(chunksRef.current, {
             type: recorder.mimeType || (kind === "video" ? "video/webm" : "audio/webm")
           });
-          if (blob.size > 2.4e6) {
-            setMessage("That recording is too big to keep in this browser. Try a shorter one.");
+          if (blob.size > 50 * 1024 * 1024) {
+            setMessage("Recordings must be 50 MB or smaller. Try a shorter one.");
           } else {
             const reader = new FileReader();
             reader.onload = () => {
@@ -281,7 +348,7 @@ export function DiaryEditor({ entry, onClose, onSave }) {
               <p className="text-xs text-muted">{formatMonthDay(form.date)}</p>
             </div>
           </div>
-          <button type="button" onClick={close} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-full text-muted transition hover:bg-surface2 hover:text-white">
+          <button type="button" onClick={close} aria-label="Close" disabled={uploading} className="grid h-9 w-9 place-items-center rounded-full text-muted transition hover:bg-surface2 hover:text-white disabled:opacity-50">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -392,8 +459,10 @@ export function DiaryEditor({ entry, onClose, onSave }) {
             )}
           </div>
           <div className="flex gap-2">
-            <button type="button" className={BUTTON_SECONDARY} onClick={close}>Cancel</button>
-            <button type="button" className={BUTTON_PRIMARY} onClick={save}>{isNew ? "Save entry" : "Save changes"}</button>
+            <button type="button" className={BUTTON_SECONDARY} onClick={close} disabled={uploading}>Cancel</button>
+            <button type="button" className={BUTTON_PRIMARY} onClick={() => void save()} disabled={uploading}>
+              {uploading ? "Uploading media…" : isNew ? "Save entry" : "Save changes"}
+            </button>
           </div>
         </div>
 

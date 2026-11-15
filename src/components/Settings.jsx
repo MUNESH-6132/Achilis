@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { useAchilles } from '../context/AchillesContext';
-import { formatMonthDay, generateId, getTodayDateString, hashPin, verifyPin } from '../utils/helpers';
-import { Check, Clock, Download, Film, Settings as SettingsIcon, Trash } from './Icons';
+import { useAuth } from '../context/AuthContext';
+import { formatMonthDay, getTodayDateString } from '../utils/helpers';
+import { Check, Clock, Download, Film, Settings as SettingsIcon, Trash, Upload } from './Icons';
 
 const CARD_CLASS = "rounded-3xl border border-line bg-surface p-6 sm:p-8";
 const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-white placeholder:text-muted/60 outline-none transition focus:border-accent/70 focus:ring-2 focus:ring-accent/10";
@@ -115,11 +116,15 @@ function getWeekStart() {
 }
 
 export function Settings({ theme, setTheme, onShowWhatsNew }) {
-  const { data, update, replaceAll } = useAchilles();
-  const [pinCur, setPinCur] = useState("");
-  const [pinNew, setPinNew] = useState("");
-  const [pinMessage, setPinMessage] = useState("");
-  const [pinBusy, setPinBusy] = useState(false);
+  const { cloudSyncError, cloudSyncStatus, data, lastSynced, notify, replaceAll, syncNow } = useAchilles();
+  const { isConfigured, signOut, updatePassword, user } = useAuth();
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordBusy, setPasswordBusy] = useState(false);
+  const [signOutBusy, setSignOutBusy] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [cloudActionMessage, setCloudActionMessage] = useState("");
   const [savedTmdbKey] = useState(() => {
     try {
       return { value: localStorage.getItem("achilles:tmdbKey") || "", error: false };
@@ -145,34 +150,59 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
   const weekMinutes = sumMinutes(pomo.filter(entry => String(entry.date) >= weekStart));
   const totalMinutes = sumMinutes(pomo);
 
-  const changePin = async event => {
+  const changePassword = async event => {
     event.preventDefault();
-    if (!data.pin?.hash) {
-      setPinMessage("No PIN is set on this device yet.");
+    if (newPassword.length < 8) {
+      setPasswordMessage("Choose a password with at least 8 characters.");
       return;
     }
-    if (pinNew.length < 4) {
-      setPinMessage("Choose at least 4 digits.");
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage("The passwords do not match.");
       return;
     }
 
-    setPinBusy(true);
+    setPasswordBusy(true);
     try {
-      const currentHash = await hashPin(pinCur, data.pin.salt);
-      if (!verifyPin(currentHash, data.pin.hash)) {
-        setPinMessage("That current PIN is not right.");
-        return;
-      }
-      const salt = generateId();
-      const hash = await hashPin(pinNew, salt);
-      update(state => ({ ...state, pin: { salt, hash } }));
-      setPinMessage("PIN updated successfully.");
-      setPinCur("");
-      setPinNew("");
-    } catch {
-      setPinMessage("Could not update the PIN. Please try again.");
+      await updatePassword(newPassword);
+      setPasswordMessage("Password updated successfully.");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      setPasswordMessage(error?.message || "Could not update the password. Please try again.");
     } finally {
-      setPinBusy(false);
+      setPasswordBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setSignOutBusy(true);
+    try {
+      await signOut();
+    } catch (error) {
+      setCloudActionMessage(error?.message || "Could not sign out. Please try again.");
+    } finally {
+      setSignOutBusy(false);
+    }
+  };
+
+  const handleSyncNow = async () => {
+    setSyncBusy(true);
+    setCloudActionMessage('');
+    try {
+      const result = await syncNow();
+      if (result.failedMediaCount) {
+        setCloudActionMessage('Your data synced, but some media remains on this device because it could not be uploaded.');
+        notify('Some media could not be synced; the local copies were retained.');
+      } else {
+        setCloudActionMessage('Your data is synced.');
+        notify('Your data is synced to Supabase.');
+      }
+    } catch (error) {
+      const message = error?.message || 'Cloud sync is unavailable. Your changes remain saved locally.';
+      setCloudActionMessage(message);
+      notify('Cloud sync failed. Your changes remain saved locally.');
+    } finally {
+      setSyncBusy(false);
     }
   };
 
@@ -180,7 +210,6 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
     if (!window.confirm("Reset all books, diary, notes, logs and focus sessions? This cannot be undone.")) return;
     if (!window.confirm("Really wipe everything? Export a backup first if you are not sure.")) return;
     replaceAll({ user: data.user, pin: data.pin });
-    setTimeout(() => location.reload(), 900);
   };
 
   const saveTmdbKey = event => {
@@ -223,6 +252,16 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
     { label: "Last 7 days", value: weekMinutes },
     { label: "All time", value: totalMinutes }
   ];
+  const cloudStatusLabel = {
+    'signed-out': 'Signed out',
+    unconfigured: 'Not configured',
+    syncing: 'Syncing…',
+    synced: 'Up to date',
+    offline: 'Offline — local only',
+  }[cloudSyncStatus] || 'Unknown';
+  const lastSyncedLabel = lastSynced && !Number.isNaN(new Date(lastSynced).getTime())
+    ? new Date(lastSynced).toLocaleString()
+    : 'Not synced yet';
 
   return (
     <div className="mx-auto max-w-4xl pb-8">
@@ -298,50 +337,84 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
           {tmdbMessage && <p role="status" className="mt-3 text-xs text-muted">{tmdbMessage}</p>}
         </section>
 
+        <section className={CARD_CLASS}>
+          <SectionHeading
+            Icon={Upload}
+            title="Cloud Sync"
+            description="Your data stays available locally and syncs to your Supabase account when connected."
+            trailing={<span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${cloudSyncStatus === 'synced' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-line bg-ink/40 text-muted'}`}>{cloudStatusLabel}</span>}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-line bg-ink/35 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Signed in as</p>
+              <p className="mt-2 break-all text-sm font-semibold text-white/90">{user?.email || (isConfigured ? 'Not signed in' : 'Supabase is not configured')}</p>
+            </div>
+            <div className="rounded-2xl border border-line bg-ink/35 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Last synced</p>
+              <p className="mt-2 text-sm font-semibold text-white/90">{lastSyncedLabel}</p>
+            </div>
+          </div>
+          {(cloudSyncError || cloudActionMessage) && (
+            <p role="status" className="mt-3 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-xs text-accent">
+              {cloudActionMessage || cloudSyncError}
+            </p>
+          )}
+          {user && (
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={handleSyncNow} disabled={syncBusy} className={BUTTON_PRIMARY}>
+                {syncBusy ? 'Syncing…' : 'Sync Now'}
+              </button>
+              <button type="button" onClick={handleSignOut} disabled={signOutBusy} className={BUTTON_SECONDARY}>
+                {signOutBusy ? 'Signing out…' : 'Sign Out'}
+              </button>
+            </div>
+          )}
+        </section>
+
         <AchFileSyncSection data={data} />
 
         <section className="rounded-3xl border border-accent/30 bg-surface p-6 sm:p-8">
           <SectionHeading
             Icon={Trash}
             title="Danger Zone"
-            description="Change the PIN that protects Personal, or reset your data. Resetting cannot be undone."
+            description="Change your account password, or reset your local and synced data. Resetting cannot be undone."
           />
-          <form onSubmit={changePin} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+          <form onSubmit={changePassword} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Current PIN</span>
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">New password</span>
               <input
                 className={INPUT_CLASS}
                 type="password"
-                inputMode="numeric"
-                autoComplete="current-password"
-                maxLength="8"
-                value={pinCur}
-                onChange={event => { setPinCur(event.target.value.replace(/\D/g, "").slice(0, 8)); setPinMessage(""); }}
-                placeholder="4–8 digits"
+                autoComplete="new-password"
+                minLength={8}
+                value={newPassword}
+                onChange={event => { setNewPassword(event.target.value); setPasswordMessage(""); }}
+                placeholder="At least 8 characters"
+                disabled={!user}
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">New PIN</span>
+              <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Confirm password</span>
               <input
                 className={INPUT_CLASS}
                 type="password"
-                inputMode="numeric"
                 autoComplete="new-password"
-                maxLength="8"
-                value={pinNew}
-                onChange={event => { setPinNew(event.target.value.replace(/\D/g, "").slice(0, 8)); setPinMessage(""); }}
-                placeholder="At least 4 digits"
+                minLength={8}
+                value={confirmPassword}
+                onChange={event => { setConfirmPassword(event.target.value); setPasswordMessage(""); }}
+                placeholder="Repeat new password"
+                disabled={!user}
               />
             </label>
             <div className="flex items-end">
-              <button type="submit" disabled={pinBusy} className={`${BUTTON_PRIMARY} w-full`}>
-                {pinBusy ? "Saving…" : "Change PIN"}
+              <button type="submit" disabled={passwordBusy || !user} className={`${BUTTON_PRIMARY} w-full`}>
+                {passwordBusy ? "Saving…" : "Change Password"}
               </button>
             </div>
           </form>
-          {pinMessage && <p role="status" className="mt-3 text-xs text-muted">{pinMessage}</p>}
+          {passwordMessage && <p role="status" className="mt-3 text-xs text-muted">{passwordMessage}</p>}
           <div className="mt-6 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs leading-relaxed text-muted">Your name and PIN are retained. Books, diary entries, notes, logs and focus history are cleared.</p>
+            <p className="text-xs leading-relaxed text-muted">Your account remains active. Books, diary entries, notes, logs and focus history are cleared on this device and queued for cloud sync.</p>
             <button type="button" onClick={resetAll} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-accent/40 px-4 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent/10">
               <Trash className="h-4 w-4" /> Reset All Data
             </button>

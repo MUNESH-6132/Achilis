@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { AchillesProvider, useAchilles } from './context/AchillesContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Home } from './components/Home';
 import { Library } from './components/Library';
@@ -9,39 +10,52 @@ import { Settings } from './components/Settings';
 import { WhatsNew } from './components/WhatsNew';
 import { Timer } from './components/Timer';
 import { SplashScreen } from './components/SplashScreen';
+import { Splash } from './components/Splash';
 import { DiaryEditor } from './components/DiaryEditor';
 import { NoteEditor } from './components/NoteEditor';
-import { Search, Lock, Download, Upload, BookOpen, Play as Film, Edit, Grid as SettingsIcon } from './components/Icons';
-import { getTodayDateString, hashPin, verifyPin, generateId, getToday } from './utils/helpers';
+import { Search, Download, Upload, BookOpen, Play as Film, Edit, Grid as SettingsIcon } from './components/Icons';
+import { getTodayDateString, generateId, getToday } from './utils/helpers';
 
-const LockScreen = ({ onUnlock }) => {
-  const { data, update, saveError } = useAchilles();
-  const hasUser = !!data.user;
-  const [name, setName] = useState('');
-  const [pin, setPin] = useState('');
+const LockScreen = () => {
+  const { saveError } = useAchilles();
+  const { authError, isConfigured, signIn, signUp } = useAuth();
+  const [mode, setMode] = useState('signin');
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async event => {
+    event.preventDefault();
     setError('');
-    if (!hasUser) {
-      const n = name.trim();
-      if (!n) { setError("Tell us what to call you."); return; }
-      if (pin && !/^\d{4,8}$/.test(pin)) { setError("The PIN must be 4 to 8 digits."); return; }
-      setBusy(true);
-      const salt = Math.random().toString(36).slice(2);
-      const hash = pin ? await hashPin(pin, salt) : null;
-      update({ user: n, pin: hash ? { salt, hash } : null });
-      setBusy(false); onUnlock();
+    setMessage('');
+    if (!isConfigured) {
+      setError('Cloud authentication is not configured. Check the Supabase environment variables and restart the app.');
       return;
     }
-    if (!pin) { setError("Enter your PIN to unlock."); return; }
+
+    if (mode === 'signup' && !fullName.trim()) {
+      setError('Enter your name to create an account.');
+      return;
+    }
+
     setBusy(true);
-    const hash = await hashPin(pin, data.pin.salt);
-    setBusy(false);
-    if (verifyPin(hash, data.pin.hash)) { setPin(''); onUnlock(); } 
-    else { setPin(''); setError("That PIN is not right."); }
+    try {
+      if (mode === 'signup') {
+        const result = await signUp(email.trim(), password, fullName.trim());
+        if (!result.session) {
+          setMessage('Account created. Check your email to confirm your address, then sign in.');
+        }
+      } else {
+        await signIn(email.trim(), password);
+      }
+    } catch (authIssue) {
+      setError(authIssue?.message || 'Authentication failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -52,24 +66,35 @@ const LockScreen = ({ onUnlock }) => {
         <div className="mb-8 text-center">
           <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-accent font-display text-2xl font-black text-ink shadow-[0_24px_60px_-24px_#ff5500]">A</div>
           <h1 className="font-display text-4xl font-black tracking-tight">Achilis</h1>
-          <p className="mx-auto mt-2 max-w-[16rem] text-sm leading-relaxed text-muted">{hasUser ? `Welcome back, ${data.user}.` : "A quiet home for your books, days and habits."}</p>
+          <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-muted">A quiet home for your books, days and habits.</p>
         </div>
         <form onSubmit={handleSubmit} className="rounded-[28px] border border-line bg-surface/90 p-6 shadow-2xl">
           {saveError && <p role="alert" className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">Browser storage is unavailable or full. Existing data may not load or save correctly.</p>}
-          {!hasUser && (
+          {authError && !error && <p role="alert" className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">{authError}</p>}
+          <div className="mb-5 grid grid-cols-2 rounded-xl border border-line bg-ink/50 p-1">
+            <button type="button" onClick={() => { setMode('signin'); setError(''); setMessage(''); }} aria-pressed={mode === 'signin'} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${mode === 'signin' ? 'bg-surface2 text-white' : 'text-muted hover:text-white'}`}>Sign In</button>
+            <button type="button" onClick={() => { setMode('signup'); setError(''); setMessage(''); }} aria-pressed={mode === 'signup'} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${mode === 'signup' ? 'bg-surface2 text-white' : 'text-muted hover:text-white'}`}>Sign Up</button>
+          </div>
+          {mode === 'signup' && (
             <div className="mb-4">
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Your name</label>
-              <input className="w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white focus:border-accent/70 focus:outline-none" value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Alex" autoFocus />
+              <label htmlFor="auth-name" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Full name</label>
+              <input id="auth-name" className="w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white focus:border-accent/70 focus:outline-none" value={fullName} onChange={event => setFullName(event.target.value)} autoComplete="name" required />
             </div>
           )}
+          <div className="mb-4">
+            <label htmlFor="auth-email" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Email</label>
+            <input id="auth-email" className="w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white focus:border-accent/70 focus:outline-none" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required />
+          </div>
           <div className="mb-5">
-            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">{hasUser ? "PIN" : "PIN · optional"}</label>
-            <input className="w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white tracking-[0.4em] focus:border-accent/70 focus:outline-none" type="password" value={pin} onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="••••" autoFocus={hasUser} />
+            <label htmlFor="auth-password" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Password</label>
+            <input id="auth-password" className="w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white focus:border-accent/70 focus:outline-none" type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
           </div>
           {error && <p className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">{error}</p>}
-          <button type="submit" className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-ink transition hover:bg-accent/90" disabled={busy}>
-            {busy ? "One moment…" : hasUser ? "Unlock" : "Create my space"}
+          {message && <p role="status" className="mb-4 rounded-xl border border-line bg-ink/40 px-3 py-2 text-xs text-muted">{message}</p>}
+          <button type="submit" className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-ink transition hover:bg-accent/90 disabled:opacity-50" disabled={busy || !isConfigured}>
+            {busy ? "One moment…" : mode === 'signup' ? "Create Account" : "Sign In"}
           </button>
+          {!isConfigured && <p className="mt-3 text-center text-xs text-muted">Supabase environment variables are missing.</p>}
         </form>
       </div>
     </div>
@@ -77,8 +102,8 @@ const LockScreen = ({ onUnlock }) => {
 };
 
 const AppContent = () => {
-  const { data, replaceAll, saveError, update } = useAchilles();
-  const [locked, setLocked] = useState(true);
+  const { cloudReady, data, replaceAll, saveError, toastMessage, update } = useAchilles();
+  const { user: authUser, loading: authLoading } = useAuth();
   const [space, setSpace] = useState('home');
   const [search, setSearch] = useState('');
   const [fab, setFab] = useState(false);
@@ -158,11 +183,11 @@ const AppContent = () => {
     reader.readAsText(file);
   };
 
+  if (authLoading) return <SplashScreen onComplete={completeSplash} />;
   if (showSplash) return <SplashScreen onComplete={completeSplash} />;
-
-  if (!data.user || (data.pin && locked)) {
-    return <LockScreen onUnlock={() => setLocked(false)} />;
-  }
+  if (!authUser) return <LockScreen />;
+  if (!cloudReady) return <Splash />;
+  const displayName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || data.user || 'Reader';
 
   const NAV = [
     { id: "library", label: "Library", Icon: BookOpen },
@@ -214,14 +239,13 @@ const AppContent = () => {
       <footer className="mt-auto border-t border-line bg-ink/80">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-4 text-xs text-muted sm:px-6">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface2 font-display text-xs font-bold text-white">{data.user.slice(0, 1).toUpperCase()}</span>
-            <span className="truncate font-medium text-white/80">{data.user}</span>
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface2 font-display text-xs font-bold text-white">{displayName.slice(0, 1).toUpperCase()}</span>
+            <span className="truncate font-medium text-white/80">{displayName}</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <button onClick={handleExport} className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 hover:bg-surface2"><Download className="h-3.5 w-3.5" /> Export</button>
             <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 hover:bg-surface2"><Upload className="h-3.5 w-3.5" /> Import</button>
             <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-            {data.pin && <button onClick={() => setLocked(true)} className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 hover:bg-surface2"><Lock className="h-3.5 w-3.5" /> Lock</button>}
           </div>
         </div>
       </footer>
@@ -264,6 +288,11 @@ const AppContent = () => {
           }
         }
       }} />}
+      {toastMessage && (
+        <div role="status" className="fixed bottom-6 left-1/2 z-[110] w-[min(90vw,32rem)] -translate-x-1/2 rounded-2xl border border-line bg-surface px-4 py-3 text-center text-sm text-white shadow-2xl">
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 };
@@ -271,9 +300,11 @@ const AppContent = () => {
 function App() {
   return (
     <ErrorBoundary>
-      <AchillesProvider>
-        <AppContent />
-      </AchillesProvider>
+      <AuthProvider>
+        <AchillesProvider>
+          <AppContent />
+        </AchillesProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }
