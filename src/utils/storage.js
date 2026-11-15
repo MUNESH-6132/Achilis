@@ -4,16 +4,21 @@ import { sanitizeState } from './sanitize';
 import { supabase } from './supabaseClient';
 
 export const STORAGE_KEY = 'achilles:v1';
+export const DEMO_STORAGE_KEY = 'achilles:demo:v1';
 
 export const SAVE_DEBOUNCE_MS = 600;
 
 /**
  * Reads IndexedDB first, then migrates the legacy localStorage value if needed.
  */
-export async function loadStateAsync() {
+export async function loadStateAsync({
+  key = STORAGE_KEY,
+  fallbackState,
+  migrateLegacy = key === STORAGE_KEY,
+} = {}) {
   let indexedDbError;
   try {
-    const stored = await idbGet(STORAGE_KEY);
+    const stored = await idbGet(key);
     if (stored) {
       return sanitizeState({ ...defaultState, ...stored, schemaVersion: SCHEMA_VERSION });
     }
@@ -21,7 +26,14 @@ export async function loadStateAsync() {
     indexedDbError = error;
   }
 
-  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!migrateLegacy) {
+    if (indexedDbError) {
+      throw new Error('Could not load data from browser storage.', { cause: indexedDbError });
+    }
+    return sanitizeState(fallbackState);
+  }
+
+  const raw = localStorage.getItem(key);
   if (!raw) {
     if (indexedDbError) {
       throw new Error('Could not load data from browser storage.', { cause: indexedDbError });
@@ -31,8 +43,8 @@ export async function loadStateAsync() {
 
   const legacyState = sanitizeState(JSON.parse(raw));
   try {
-    await idbSet(STORAGE_KEY, legacyState);
-    localStorage.removeItem(STORAGE_KEY);
+    await idbSet(key, legacyState);
+    localStorage.removeItem(key);
   } catch {
     // Keep the readable legacy copy; autosave will retry the IndexedDB write.
   }
@@ -42,9 +54,9 @@ export async function loadStateAsync() {
 /**
  * Writes the whole state to IndexedDB. Returns false if persistence fails.
  */
-export async function saveStateAsync(state) {
+export async function saveStateAsync(state, key = STORAGE_KEY) {
   try {
-    await idbSet(STORAGE_KEY, state);
+    await idbSet(key, state);
     return true;
   } catch {
     return false;
@@ -104,9 +116,9 @@ export const fileSync = {
  *
  * Returns the effect cleanup function.
  */
-export function startAutosave(state, { onSaveResult, sync = fileSync } = {}) {
+export function startAutosave(state, { key = STORAGE_KEY, onSaveResult, sync = fileSync } = {}) {
   const persist = async () => {
-    const saved = await saveStateAsync(state);
+    const saved = await saveStateAsync(state, key);
     if (onSaveResult) onSaveResult(saved);
     sync.queue(state);
   };

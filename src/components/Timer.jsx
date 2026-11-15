@@ -7,7 +7,6 @@ const TIMER_KEY = "achilles:timer:v1";
 const SOUND_KEY = "achilles:sound:v1";
 const BUTTON_PRIMARY = "inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition duration-200 hover:bg-[#ff6a1f] active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-40";
 const BUTTON_SECONDARY = "inline-flex items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-semibold text-white/80 transition duration-200 hover:border-accent/60 hover:bg-white/[0.04] hover:text-white active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-40";
-const SAFE_BOTTOM = { bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" };
 let audioContext = null;
 
 function formatTime(seconds) {
@@ -378,8 +377,7 @@ export function Timer() {
       <button
         type="button"
         onClick={() => setMinimized(false)}
-        style={SAFE_BOTTOM}
-        className="fixed right-5 z-40 flex items-center gap-2 rounded-full border border-line bg-surface/95 px-4 py-2.5 shadow-[0_20px_40px_-18px_rgba(0,0,0,0.9)] transition hover:border-accent/60 hover:text-accent"
+        className="fixed bottom-40 right-4 z-40 flex items-center gap-2 rounded-full border border-line bg-surface/95 px-4 py-2.5 shadow-[0_20px_40px_-18px_rgba(0,0,0,0.9)] transition hover:border-accent/60 hover:text-accent md:bottom-24 md:right-24"
         aria-label="Open pomodoro timer"
       >
         <Clock className="h-4 w-4 text-accent" />
@@ -416,7 +414,7 @@ export function Timer() {
   }
 
   return (
-    <aside style={SAFE_BOTTOM} className="pop-in fixed right-4 z-40 w-[19.5rem] max-w-[calc(100vw-2rem)] rounded-[28px] border border-line bg-surface/95 p-5 shadow-[0_30px_70px_-25px_rgba(0,0,0,0.95)]" aria-label="Pomodoro timer">
+    <aside className="pop-in fixed bottom-40 right-4 z-40 w-[19.5rem] max-w-[calc(100vw-2rem)] rounded-[28px] border border-line bg-surface/95 p-5 shadow-[0_30px_70px_-25px_rgba(0,0,0,0.95)] md:bottom-24 md:right-24" aria-label="Pomodoro timer">
       <div className="mb-3 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em] text-muted"><Clock className="h-3.5 w-3.5 text-accent" /> Pomodoro</span>
         <div className="flex items-center gap-1">

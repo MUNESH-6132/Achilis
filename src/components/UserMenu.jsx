@@ -4,13 +4,13 @@ import { useAuth } from '../context/AuthContext';
 import { Settings as SettingsIcon } from './Icons';
 
 export function UserMenu({ onSettings }) {
-  const { signOut, user } = useAuth();
+  const { exitDemo, isDemo, signOut, user } = useAuth();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState('');
   const menuRef = useRef(null);
   const email = user?.email || '';
-  const initial = (user?.user_metadata?.full_name?.trim()?.[0] || email[0] || '?').toUpperCase();
+  const initial = (isDemo ? 'D' : user?.user_metadata?.full_name?.trim()?.[0] || email[0] || '?').toUpperCase();
 
   useEffect(() => {
     if (!open) return undefined;
@@ -34,7 +34,8 @@ export function UserMenu({ onSettings }) {
     setSigningOut(true);
     setError('');
     try {
-      await signOut();
+      if (isDemo) exitDemo();
+      else await signOut();
       setOpen(false);
     } catch (signOutError) {
       setError(signOutError?.message || 'Could not sign out. Please try again.');
@@ -67,8 +68,8 @@ export function UserMenu({ onSettings }) {
             className="absolute right-0 top-[calc(100%+0.65rem)] z-[70] w-72 origin-top-right rounded-2xl border border-white/10 bg-surface/80 p-2 shadow-2xl backdrop-blur-xl"
           >
             <div className="border-b border-white/10 px-3 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Signed in as</p>
-              <p className="mt-1 break-all text-sm font-medium text-white" title={email}>{email}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">{isDemo ? 'Sample session' : 'Signed in as'}</p>
+              <p className="mt-1 break-all text-sm font-medium text-white" title={email}>{isDemo ? 'Demo Reader · sample data only' : email}</p>
             </div>
             <button
               type="button"
@@ -94,7 +95,7 @@ export function UserMenu({ onSettings }) {
                 <path d="M10 17l5-5-5-5M15 12H3" />
                 <path d="M12 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5" />
               </svg>
-              {signingOut ? 'Signing out…' : 'Sign Out'}
+              {signingOut ? (isDemo ? 'Leaving demo…' : 'Signing out…') : isDemo ? 'Exit Demo' : 'Sign Out'}
             </button>
           </motion.div>
         )}

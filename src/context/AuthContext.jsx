@@ -2,6 +2,15 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { supabase, supabaseConfigured } from '../utils/supabaseClient';
 
 const AuthContext = createContext(null);
+const DEMO_MODE_KEY = 'achilis:demo';
+
+function readDemoMode() {
+  try {
+    return localStorage.getItem(DEMO_MODE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
 
 function requireSupabase() {
   if (!supabase) {
@@ -11,11 +20,13 @@ function requireSupabase() {
 }
 
 export function AuthProvider({ children }) {
+  const [isDemo, setIsDemo] = useState(readDemoMode);
   const [session, setSession] = useState(null);
-  const [loading, setLoading] = useState(supabaseConfigured);
+  const [loading, setLoading] = useState(supabaseConfigured && !isDemo);
   const [authError, setAuthError] = useState('');
 
   useEffect(() => {
+    if (isDemo) return undefined;
     if (!supabase) return undefined;
 
     let active = true;
@@ -44,6 +55,19 @@ export function AuthProvider({ children }) {
       active = false;
       subscription.unsubscribe();
     };
+  }, [isDemo]);
+
+  const startDemo = useCallback(() => {
+    localStorage.setItem(DEMO_MODE_KEY, 'true');
+    setSession(null);
+    setAuthError('');
+    setLoading(false);
+    setIsDemo(true);
+  }, []);
+
+  const exitDemo = useCallback(() => {
+    localStorage.removeItem(DEMO_MODE_KEY);
+    window.location.reload();
   }, []);
 
   const signIn = useCallback(async (email, password) => {
@@ -79,16 +103,19 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(() => ({
     authError,
+    exitDemo,
     isConfigured: supabaseConfigured,
+    isDemo,
     loading,
     session,
     signIn,
     signInWithPassword: signIn,
     signOut,
     signUp,
+    startDemo,
     updatePassword,
     user: session?.user || null,
-  }), [authError, loading, session, signIn, signOut, signUp, updatePassword]);
+  }), [authError, exitDemo, isDemo, loading, session, signIn, signOut, signUp, startDemo, updatePassword]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

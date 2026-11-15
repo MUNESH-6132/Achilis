@@ -16,10 +16,11 @@ import { NoteEditor } from './components/NoteEditor';
 import { UserMenu } from './components/UserMenu';
 import { Search, Download, Upload, BookOpen, Play as Film, Edit, Grid as SettingsIcon } from './components/Icons';
 import { getTodayDateString, generateId, getToday } from './utils/helpers';
+import { demoData } from './utils/mockData';
 
 const LockScreen = () => {
   const { saveError } = useAchilles();
-  const { authError, isConfigured, signIn, signUp } = useAuth();
+  const { authError, isConfigured, signIn, signUp, startDemo } = useAuth();
   const [mode, setMode] = useState('signin');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -59,6 +60,15 @@ const LockScreen = () => {
     }
   };
 
+  const handleStartDemo = () => {
+    setError('');
+    try {
+      startDemo();
+    } catch (demoError) {
+      setError(demoError?.message || 'Could not start demo mode in this browser.');
+    }
+  };
+
   return (
     <div className="relative z-[100] flex min-h-screen items-center justify-center overflow-hidden px-5 py-12">
       <div className="pointer-events-none absolute -top-48 left-1/2 h-[460px] w-[460px] -translate-x-1/2 rounded-full bg-accent/25 blur-[150px]" />
@@ -95,6 +105,13 @@ const LockScreen = () => {
           <button type="submit" className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-ink transition hover:bg-accent/90 disabled:opacity-50" disabled={busy || !isConfigured}>
             {busy ? "One moment…" : mode === 'signup' ? "Create Account" : "Sign In"}
           </button>
+          <button
+            type="button"
+            onClick={handleStartDemo}
+            className="mt-3 w-full rounded-xl border border-white/15 bg-white/[0.08] px-4 py-3 text-sm font-bold text-white shadow-lg backdrop-blur transition hover:border-accent/50 hover:bg-white/[0.13]"
+          >
+            Try the Demo <span className="font-medium text-white/65">(No signup required)</span>
+          </button>
           {!isConfigured && <p className="mt-3 text-center text-xs text-muted">Supabase environment variables are missing.</p>}
         </form>
       </div>
@@ -104,7 +121,7 @@ const LockScreen = () => {
 
 const AppContent = () => {
   const { cloudReady, data, replaceAll, saveError, toastMessage, update } = useAchilles();
-  const { user: authUser, loading: authLoading } = useAuth();
+  const { isDemo, user: authUser, loading: authLoading } = useAuth();
   const [space, setSpace] = useState('home');
   const [search, setSearch] = useState('');
   const [fab, setFab] = useState(false);
@@ -184,11 +201,13 @@ const AppContent = () => {
     reader.readAsText(file);
   };
 
-  if (authLoading) return <SplashScreen onComplete={completeSplash} />;
+  if (!isDemo && authLoading) return <SplashScreen onComplete={completeSplash} />;
   if (showSplash) return <SplashScreen onComplete={completeSplash} />;
-  if (!authUser) return <LockScreen />;
+  if (!isDemo && !authUser) return <LockScreen />;
   if (!cloudReady) return <Splash />;
-  const displayName = authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || data.user || 'Reader';
+  const displayName = isDemo
+    ? 'Demo Reader'
+    : authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || data.user || 'Reader';
 
   const NAV = [
     { id: "library", label: "Library", Icon: BookOpen },
@@ -201,10 +220,13 @@ const AppContent = () => {
     <div className="flex min-h-screen flex-col bg-ink text-white">
       <header className="sticky top-0 z-30 border-b border-line bg-ink/95">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
-          <button onClick={() => setSpace('home')} className="flex items-center gap-2.5">
-            <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent font-display text-lg font-black text-ink shadow-[0_10px_26px_-12px_#ff5500]">A</span>
-            <span className="font-display text-xl font-black tracking-tight">Achilis</span>
-          </button>
+          <div className="flex items-center gap-2.5">
+            <button onClick={() => setSpace('home')} className="flex items-center gap-2.5">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent font-display text-lg font-black text-ink shadow-[0_10px_26px_-12px_#ff5500]">A</span>
+              <span className="font-display text-xl font-black tracking-tight">Achilis</span>
+            </button>
+            {isDemo && <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-accent">Demo Mode</span>}
+          </div>
           
           {space !== 'home' && space !== 'settings' && (
             <div className="relative order-last w-full sm:order-none sm:ml-2 sm:w-auto sm:max-w-xs sm:flex-1">
@@ -213,7 +235,7 @@ const AppContent = () => {
             </div>
           )}
 
-          <nav className="ml-auto flex items-center rounded-full border border-line bg-surface p-1">
+          <nav className="ml-auto hidden items-center rounded-full border border-line bg-surface p-1 md:flex">
             {NAV.map(({ id, label, Icon }) => (
               <button key={id} onClick={() => { setSpace(id); setSearch(''); }} className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition ${space === id ? 'bg-white text-ink shadow-sm' : 'text-muted hover:text-white'}`}>
                 <Icon className="h-3.5 w-3.5" />
@@ -232,7 +254,7 @@ const AppContent = () => {
       {saveError && <div role="alert" className="border-b border-accent/30 bg-accent/10 px-4 py-2 text-center text-xs text-accent">Browser storage is unavailable or full — recent changes may not be saved.</div>}
       {preferenceError && <div role="status" className="border-b border-accent/30 bg-accent/10 px-4 py-2 text-center text-xs text-accent">A preference could not be saved in this browser.</div>}
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-44 pt-8 sm:px-6">
+      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-32 pt-8 sm:px-6 sm:pb-20">
         {space === 'home' && <Home onGo={setSpace} />}
         {space === 'library' && <Library query={search} />}
         {space === 'entertainment' && <Entertainment query={search} />}
@@ -254,8 +276,26 @@ const AppContent = () => {
         </div>
       </footer>
 
+      <nav
+        aria-label="Main navigation"
+        className="fixed bottom-4 left-1/2 z-50 flex w-[min(94vw,24rem)] -translate-x-1/2 items-center justify-around rounded-2xl border border-line bg-surface/90 p-1.5 shadow-2xl backdrop-blur-xl md:hidden"
+      >
+        {NAV.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => { setSpace(id); setSearch(''); }}
+            aria-current={space === id ? 'page' : undefined}
+            className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold transition ${space === id ? 'bg-accent text-ink' : 'text-muted hover:bg-white/[0.06] hover:text-white'}`}
+          >
+            <Icon className="h-4 w-4" />
+            <span>{label}</span>
+          </button>
+        ))}
+      </nav>
+
       {/* FAB (Floating Action Button) */}
-      <div className="fixed bottom-24 right-5 z-40 flex flex-col items-end gap-2">
+      <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2 md:bottom-24 md:right-8">
         {fab && (
           <div className="pop-in flex flex-col items-end gap-2">
             <button onClick={() => { setFab(false); setQuick({ kind: 'note' }); }} className="rounded-full border border-line bg-surface/95 px-4 py-2 text-xs font-semibold text-white shadow-xl transition hover:border-accent/60 hover:text-accent">Quick note</button>
@@ -305,11 +345,23 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <AchillesProvider>
-          <AppContent />
-        </AchillesProvider>
+        <AuthAwareApp />
       </AuthProvider>
     </ErrorBoundary>
   );
 }
+
+function AuthAwareApp() {
+  const { isDemo } = useAuth();
+  return (
+    <AchillesProvider
+      key={isDemo ? 'demo' : 'account'}
+      demoMode={isDemo}
+      initialData={isDemo ? demoData : undefined}
+    >
+      <AppContent />
+    </AchillesProvider>
+  );
+}
+
 export default App;

@@ -116,7 +116,7 @@ function getWeekStart() {
 }
 
 export function Settings({ theme, setTheme, onShowWhatsNew }) {
-  const { cloudSyncError, cloudSyncStatus, data, lastSynced, notify, replaceAll, syncNow } = useAchilles();
+  const { cloudSyncError, cloudSyncStatus, data, isDemo, lastSynced, notify, replaceAll, syncNow } = useAchilles();
   const { isConfigured, signOut, updatePassword, user } = useAuth();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -206,6 +206,7 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
     { label: "All time", value: totalMinutes }
   ];
   const cloudStatusLabel = {
+    demo: 'Demo mode · local only',
     'signed-out': 'Signed out',
     unconfigured: 'Not configured',
     syncing: 'Syncing…',
@@ -275,7 +276,7 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl border border-line bg-ink/35 p-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Signed in as</p>
-              <p className="mt-2 break-all text-sm font-semibold text-white/90">{user?.email || (isConfigured ? 'Not signed in' : 'Supabase is not configured')}</p>
+              <p className="mt-2 break-all text-sm font-semibold text-white/90">{isDemo ? 'Demo mode · local data only' : user?.email || (isConfigured ? 'Not signed in' : 'Supabase is not configured')}</p>
             </div>
             <div className="rounded-2xl border border-line bg-ink/35 p-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Last synced</p>

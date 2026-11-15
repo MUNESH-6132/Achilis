@@ -4,7 +4,7 @@ import { supabase, supabaseConfigured } from '../utils/supabaseClient';
 import { idbGet, idbSet } from '../utils/db';
 import { sanitizeState } from '../utils/sanitize';
 import { SCHEMA_VERSION, defaultState } from '../utils/defaults';
-import { fileSync, loadStateAsync, saveCloudStateAsync, saveStateAsync, startAutosave, toCloudState } from '../utils/storage';
+import { DEMO_STORAGE_KEY, fileSync, loadStateAsync, saveCloudStateAsync, saveStateAsync, startAutosave, toCloudState } from '../utils/storage';
 import { uploadDiaryMediaToSupabase } from '../utils/media';
 import { Splash } from '../components/Splash';
 
@@ -43,9 +43,11 @@ function restoreLocalMedia(cloudState, localState) {
   };
 }
 
-export function AchillesProvider({ children }) {
-  const { user, loading: authLoading } = useAuth();
-  const [state, setState] = useState(defaultState);
+export function AchillesProvider({ children, demoMode = false, initialData = defaultState }) {
+  const { isDemo, user, loading: authLoading } = useAuth();
+  const activeDemoMode = demoMode || isDemo;
+  const stateStorageKey = activeDemoMode ? DEMO_STORAGE_KEY : undefined;
+  const [state, setState] = useState(() => activeDemoMode ? sanitizeState(initialData) : defaultState);
   const [loading, setLoading] = useState(true);
   const [saveError, setSaveError] = useState(false);
   const [cloudReadyUserId, setCloudReadyUserId] = useState(null);
@@ -59,7 +61,7 @@ export function AchillesProvider({ children }) {
   const toastTimerRef = useRef(null);
   const userId = user?.id;
   const userDisplayName = user ? getUserDisplayName(user) : '';
-  const cloudReady = !userId || cloudReadyUserId === userId;
+  const cloudReady = activeDemoMode || !userId || cloudReadyUserId === userId;
 
   const notify = useCallback(message => {
     setToastMessage(message);
@@ -69,12 +71,19 @@ export function AchillesProvider({ children }) {
 
   useEffect(() => {
     let mounted = true;
-    loadStateAsync()
+    loadStateAsync({
+      key: stateStorageKey,
+      fallbackState: activeDemoMode ? initialData : undefined,
+      migrateLegacy: !activeDemoMode,
+    })
       .then(loadedState => {
         if (mounted) setState(loadedState);
       })
       .catch(() => {
-        if (mounted) setSaveError(true);
+        if (mounted) {
+          setSaveError(true);
+          if (activeDemoMode) setState(sanitizeState(initialData));
+        }
       })
       .finally(() => {
         if (mounted) setLoading(false);
@@ -83,7 +92,7 @@ export function AchillesProvider({ children }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [activeDemoMode, initialData, stateStorageKey]);
 
   useEffect(() => {
     stateRef.current = state;
@@ -97,6 +106,14 @@ export function AchillesProvider({ children }) {
 
   useEffect(() => {
     if (loading || authLoading) return undefined;
+    if (activeDemoMode) {
+      setCloudAccountReadyId(null);
+      setCloudSyncStatus('demo');
+      setCloudSyncError('');
+      setLastSynced(null);
+      lastCloudSnapshotRef.current = null;
+      return undefined;
+    }
     if (!userId) {
       setCloudReadyUserId(null);
       setCloudAccountReadyId(null);
@@ -194,10 +211,10 @@ export function AchillesProvider({ children }) {
     return () => {
       active = false;
     };
-  }, [authLoading, loading, notify, userDisplayName, userId]);
+  }, [activeDemoMode, authLoading, loading, notify, userDisplayName, userId]);
 
   useEffect(() => {
-    if (!userId || !supabase || !cloudReady || cloudAccountReadyId !== userId) return undefined;
+    if (activeDemoMode || !userId || !supabase || !cloudReady || cloudAccountReadyId !== userId) return undefined;
 
     let active = true;
     const channel = supabase
@@ -239,10 +256,10 @@ export function AchillesProvider({ children }) {
       active = false;
       void supabase.removeChannel(channel);
     };
-  }, [cloudAccountReadyId, cloudReady, notify, userId]);
+  }, [activeDemoMode, cloudAccountReadyId, cloudReady, notify, userId]);
 
   useEffect(() => {
-    if (loading || authLoading || !userId || !supabase || !cloudReady || cloudAccountReadyId !== userId) return undefined;
+    if (activeDemoMode || loading || authLoading || !userId || !supabase || !cloudReady || cloudAccountReadyId !== userId) return undefined;
 
     const snapshot = JSON.stringify(toCloudState(state));
     if (snapshot === lastCloudSnapshotRef.current) return undefined;
@@ -270,14 +287,20 @@ export function AchillesProvider({ children }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [authLoading, cloudAccountReadyId, cloudReady, loading, notify, state, userId]);
+  }, [activeDemoMode, authLoading, cloudAccountReadyId, cloudReady, loading, notify, state, userId]);
 
   useEffect(() => {
     if (loading) return undefined;
-    return startAutosave(state, { onSaveResult: saved => setSaveError(!saved) });
-  }, [loading, state]);
+    return startAutosave(state, {
+      key: stateStorageKey,
+      onSaveResult: saved => setSaveError(!saved),
+    });
+  }, [loading, state, stateStorageKey]);
 
   const syncNow = useCallback(async () => {
+    if (activeDemoMode) {
+      throw new Error('Cloud sync is disabled in demo mode.');
+    }
     if (!userId || !supabase) {
       throw new Error('Sign in with a configured Supabase account before syncing.');
     }
@@ -306,7 +329,7 @@ export function AchillesProvider({ children }) {
       setCloudSyncStatus('offline');
       throw error;
     }
-  }, [state, userId]);
+  }, [activeDemoMode, state, userId]);
 
   const update = useCallback(patch => {
     setState(previous => (
@@ -327,6 +350,7 @@ export function AchillesProvider({ children }) {
     cloudSyncError,
     cloudSyncStatus,
     data: state,
+    isDemo: activeDemoMode,
     lastSynced,
     notify,
     replaceAll,
