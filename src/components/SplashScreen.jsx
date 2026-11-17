@@ -1,36 +1,66 @@
-import React, { useEffect } from 'react';
-import achillesImg from '../assets/images.jpeg';
+import React, { useEffect, useState } from 'react';
+import { HelmetLogo } from './HelmetLogo';
 
-export function SplashScreen({ onComplete }) {
+const SPLASH_SESSION_KEY = 'achilis:splash-seen:v1';
+
+export function SplashScreen() {
+  const [showIntro, setShowIntro] = useState(() => {
+    try {
+      return sessionStorage.getItem(SPLASH_SESSION_KEY) !== 'true';
+    } catch {
+      return true;
+    }
+  });
+
   useEffect(() => {
-    const timer = setTimeout(() => {
-      onComplete();
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, [onComplete]);
+    if (!showIntro) return undefined;
+    try {
+      sessionStorage.setItem(SPLASH_SESSION_KEY, 'true');
+    } catch {
+      // The short intro still works when session storage is unavailable.
+    }
+    const timer = window.setTimeout(() => setShowIntro(false), 900);
+    const handleKeyDown = event => {
+      if (event.key === 'Escape' || event.key === 'Enter' || event.key === ' ') {
+        setShowIntro(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showIntro]);
 
   return (
-    <div className="fade-in relative z-[100] flex min-h-screen flex-col items-center justify-center overflow-hidden bg-ink text-white">
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[600px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/15 blur-[120px]" />
-
-      <div className="pop-in relative mb-8">
-        <img
-          src={achillesImg}
-          alt="Achilles"
-          loading="eager"
-          decoding="async"
-          className="h-64 w-auto object-contain drop-shadow-[0_20px_50px_rgba(0,0,0,0.8)]"
-          style={{ animation: 'achFloat 6s ease-in-out infinite' }}
-        />
-      </div>
-
-      <div className="rise-in relative text-center" style={{ animationDelay: '0.2s' }}>
-        <h1 className="font-display text-5xl font-black tracking-widest text-accent drop-shadow-[0_0_15px_rgba(240,135,58,0.5)]">
-          ACHILLES
-        </h1>
-        <p className="mt-4 text-sm uppercase tracking-[0.2em] text-muted">
-          "Let fate do what it will; I will meet it with my spear."
-        </p>
+    <div
+      className="relative z-[100] flex min-h-screen flex-col items-center justify-center overflow-hidden bg-ink px-6 text-text"
+      onClick={() => setShowIntro(false)}
+    >
+      <div className="text-center" role="status" aria-live="polite">
+        <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-3xl bg-surface border border-line shadow-2xl mb-6">
+          <HelmetLogo className="h-14 w-14 text-accent" />
+        </div>
+        <h1 className="font-serif text-5xl sm:text-6xl tracking-widest uppercase font-bold text-text">ACHILIS</h1>
+        {showIntro ? (
+          <>
+            <p className="mt-3 text-[11px] font-mono uppercase tracking-[0.28em] text-accent font-semibold">
+              A universe of your own.
+            </p>
+            <p className="mt-2 text-xs text-muted max-w-xs mx-auto">
+              Knowledge · Entertainment · Reflections
+            </p>
+            <button
+              type="button"
+              onClick={() => setShowIntro(false)}
+              className="mt-8 min-h-11 px-5 py-2 text-[10px] font-mono uppercase tracking-[0.2em] text-muted hover:text-accent border border-line rounded-full"
+            >
+              Skip intro
+            </button>
+          </>
+        ) : (
+          <p className="mt-4 text-xs uppercase tracking-[0.24em] text-muted">Awakening Olympus…</p>
+        )}
       </div>
     </div>
   );

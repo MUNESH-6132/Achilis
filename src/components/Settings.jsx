@@ -3,29 +3,27 @@ import { useAchilles } from '../context/AchillesContext';
 import { useAuth } from '../context/AuthContext';
 import { formatMonthDay, getTodayDateString } from '../utils/helpers';
 import { Check, Clock, Download, Settings as SettingsIcon, Trash, Upload } from './Icons';
+import { restoreTrackersBackup } from '../utils/habitStore';
 
-const CARD_CLASS = "rounded-3xl border border-line bg-surface p-6 sm:p-8";
-const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-accent/70 focus:outline-none";
-const BUTTON_PRIMARY = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-ink transition hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50";
-const BUTTON_SECONDARY = "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line px-4 py-2.5 text-sm font-semibold text-white/85 transition hover:border-accent/50 hover:bg-surface2 disabled:cursor-not-allowed disabled:opacity-50";
+const CARD_CLASS = "mt-12 border-b border-white/5 pb-8 last:border-b-0";
+const INPUT_CLASS = "w-full border-0 border-b border-white/20 bg-transparent px-0 py-3 text-sm text-white placeholder:text-white/40 focus:border-white focus:outline-none";
+const BUTTON_PRIMARY = "inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black transition hover:bg-white/85 disabled:cursor-not-allowed disabled:opacity-50";
+const BUTTON_SECONDARY = "inline-flex min-h-11 items-center justify-center gap-2 px-2 py-2.5 text-sm font-semibold text-white/70 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-50";
 
 const THEMES = [
-  { id: "ember", name: "Ember", note: "Warm library at dusk", sw: ["#17110e", "#2f241b", "#f0873a"] },
-  { id: "noir", name: "Noir", note: "The original black and orange", sw: ["#0a0a0a", "#141414", "#ff5500"] },
-  { id: "midnight", name: "Midnight", note: "Deep blue and ice", sw: ["#080f1d", "#101a2c", "#5caaff"] },
-  { id: "sage", name: "Sage", note: "Forest and clay", sw: ["#10150f", "#182016", "#d19a66"] },
-  { id: "paper", name: "Paper", note: "Cream daylight", sw: ["#f7f1e6", "#fffbf3", "#b5572e"] }
+  { id: "dark", name: "Dark Theme", note: "Near-black brutalist editorial with antique gold", sw: ["#08090C", "#181818", "#B49B70"] },
+  { id: "light", name: "Light Theme", note: "Pure white editorial with antique gold", sw: ["#FFFFFF", "#E9E9E9", "#9B8158"] }
 ];
 
 function SectionHeading({ Icon, title, description, trailing }) {
   return (
     <div className="mb-6 flex items-start gap-3">
-      <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-accent/10 text-accent">
+      <span className="mt-1 shrink-0 text-muted">
         <Icon className="h-5 w-5" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-display text-lg font-bold">{title}</h2>
+        <h2 className="font-display text-xs font-semibold uppercase tracking-[0.2em] text-muted">{title}</h2>
           {trailing}
         </div>
         <p className="mt-1 text-xs leading-relaxed text-muted">{description}</p>
@@ -34,10 +32,34 @@ function SectionHeading({ Icon, title, description, trailing }) {
   );
 }
 
-function AchFileSyncSection({ data }) {
+function PreferenceToggle({ title, description, checked, onChange }) {
+  return (
+    <div className="flex items-center justify-between gap-5 border-b border-white/5 py-4 last:border-b-0">
+      <div>
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <p className="mt-1 max-w-xl text-xs leading-relaxed text-muted">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={title}
+        onClick={() => onChange(!checked)}
+        className="grid h-11 w-12 shrink-0 place-items-center"
+      >
+        <span className={`relative block h-6 w-11 rounded-full transition-colors ${checked ? 'bg-accent' : 'bg-surface2'}`}>
+          <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${checked ? 'translate-x-5' : 'translate-x-0'}`} />
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function YourDataSection({ data, onExport, onImport, onImportFile, importInputRef, onRestoreTrackers }) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [syncName, setSyncName] = useState("");
+  const [restoreMessage, setRestoreMessage] = useState("");
 
   const chooseFile = async () => {
     if (busy) return;
@@ -69,42 +91,44 @@ function AchFileSyncSection({ data }) {
     }
   };
 
-  const downloadBackup = () => {
-    setMessage("");
-    try {
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `achilis-${getTodayDateString()}.json`;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch {
-      setMessage("Could not create the backup. Please try again.");
-    }
-  };
-
   return (
     <section className={CARD_CLASS}>
       <SectionHeading
         Icon={Download}
-        title="File Sync"
-        description="Export a portable backup or write your data to a JSON file you choose."
+        title="Your data"
+        description="Export or import a backup, or write your data to a JSON file you choose."
       />
       {syncName && (
-        <p className="mb-4 rounded-xl border border-line bg-ink/40 px-4 py-3 text-xs text-muted">
+        <p className="mb-4 text-xs text-muted">
           Last written file: <span className="font-semibold text-white/80">{syncName}</span>
         </p>
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <button type="button" onClick={downloadBackup} className={BUTTON_SECONDARY}>
-          <Download className="h-4 w-4" /> Download Backup
+      <div className="flex flex-wrap gap-3">
+        <button type="button" onClick={onExport} className={BUTTON_SECONDARY}>
+          <Download className="h-4 w-4" /> Export
         </button>
-        <button type="button" onClick={chooseFile} disabled={busy} className={BUTTON_PRIMARY}>
-          {busy ? "Opening…" : "Choose Sync File"}
+        <button type="button" onClick={onImport} className={BUTTON_SECONDARY}>
+          <Upload className="h-4 w-4" /> Import
+        </button>
+        <button type="button" onClick={chooseFile} disabled={busy} className={BUTTON_SECONDARY}>
+          Choose Sync File
+          {busy && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />}
+        </button>
+        <button type="button" onClick={async () => {
+          setRestoreMessage("");
+          try {
+            await onRestoreTrackers();
+            setRestoreMessage("The tracker backup was restored without replacing current data.");
+          } catch (error) {
+            setRestoreMessage(error?.message || "Could not restore the tracker backup.");
+          }
+        }} className={BUTTON_SECONDARY}>
+          Restore tracker backup
         </button>
       </div>
+      <input ref={importInputRef} type="file" accept=".json,application/json" className="hidden" onChange={onImportFile} />
       {message && <p role="status" className="mt-3 text-xs text-muted">{message}</p>}
+      {restoreMessage && <p role="status" className="mt-3 text-xs text-muted">{restoreMessage}</p>}
     </section>
   );
 }
@@ -115,14 +139,26 @@ function getWeekStart() {
   return date.toISOString().slice(0, 10);
 }
 
-export function Settings({ theme, setTheme, onShowWhatsNew }) {
-  const { cloudSyncError, cloudSyncStatus, data, isDemo, lastSynced, notify, replaceAll, syncNow } = useAchilles();
-  const { isConfigured, signOut, updatePassword, user } = useAuth();
+export function Settings({
+  theme,
+  setTheme,
+  reduceMotion,
+  setReduceMotion,
+  ambientMode,
+  setAmbientMode,
+  onShowWhatsNew,
+  onExport,
+  onImport,
+  onImportFile,
+  importInputRef,
+}) {
+  const { cloudSyncError, cloudSyncStatus, data, isDemo, lastSynced, notify, replaceAll, syncNow, update } = useAchilles();
+  const { isConfigured, updatePassword, user } = useAuth();
+  const ownerId = isDemo ? 'demo' : user?.id || 'local';
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
   const [passwordBusy, setPasswordBusy] = useState(false);
-  const [signOutBusy, setSignOutBusy] = useState(false);
   const [syncBusy, setSyncBusy] = useState(false);
   const [cloudActionMessage, setCloudActionMessage] = useState("");
 
@@ -162,17 +198,6 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
     }
   };
 
-  const handleSignOut = async () => {
-    setSignOutBusy(true);
-    try {
-      await signOut();
-    } catch (error) {
-      setCloudActionMessage(error?.message || "Could not sign out. Please try again.");
-    } finally {
-      setSignOutBusy(false);
-    }
-  };
-
   const handleSyncNow = async () => {
     setSyncBusy(true);
     setCloudActionMessage('');
@@ -192,6 +217,16 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
     } finally {
       setSyncBusy(false);
     }
+  };
+
+  const handleRestoreTrackers = async () => {
+    const restored = await restoreTrackersBackup(ownerId, data);
+    update(state => ({
+      ...state,
+      trackers: restored.trackers,
+      logs: restored.logs,
+    }));
+    notify('Tracker backup restored additively.');
   };
 
   const resetAll = () => {
@@ -218,11 +253,11 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
     : 'Not synced yet';
 
   return (
-    <div className="mx-auto max-w-4xl pb-8">
+    <div className="mx-auto max-w-5xl pb-16">
       <header className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">Preferences</p>
-          <h1 className="mt-1 font-display text-3xl font-black tracking-tight">Settings</h1>
+          <h1 className="mt-1 font-display text-5xl font-bold tracking-tight sm:text-6xl">Settings</h1>
           <p className="mt-2 max-w-xl text-sm text-muted">Shape your space, manage your data, and review the time you’ve spent focusing.</p>
         </div>
         {onShowWhatsNew && (
@@ -232,14 +267,14 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
         )}
       </header>
 
-      <div className="space-y-5">
+      <div>
         <section className={CARD_CLASS}>
           <SectionHeading
             Icon={SettingsIcon}
             title="Appearance"
             description="Choose a color palette. Your preference is saved on this device."
           />
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-wrap gap-x-8 gap-y-2">
             {THEMES.map(option => {
               const active = theme === option.id;
               return (
@@ -248,21 +283,28 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
                   type="button"
                   onClick={() => setTheme(option.id)}
                   aria-pressed={active}
-                  className={`flex min-w-0 items-center gap-3 rounded-2xl border p-4 text-left transition ${active ? "border-accent bg-accent/[0.08]" : "border-line bg-ink/30 hover:border-accent/40 hover:bg-ink/50"}`}
+                  className={`flex min-h-11 items-center gap-2 text-sm transition ${active ? "text-white" : "text-muted hover:text-white"}`}
                 >
-                  <span className="flex shrink-0 -space-x-2">
-                    {option.sw.map((color, index) => (
-                      <span key={index} className="h-8 w-8 rounded-full border border-line shadow-sm" style={{ backgroundColor: color }} />
-                    ))}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-display text-sm font-bold">{option.name}</span>
-                    <span className="mt-0.5 block truncate text-xs text-muted">{option.note}</span>
-                  </span>
-                  {active && <Check className="h-4 w-4 shrink-0 text-accent" />}
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: option.sw[2] }} />
+                  <span>{option.name}</span>
+                  {active && <Check className="h-3.5 w-3.5 text-accent" />}
                 </button>
               );
             })}
+          </div>
+          <div className="mt-6">
+            <PreferenceToggle
+              title="Reduce motion"
+              description="Use simpler transitions and pause Ambient motion."
+              checked={reduceMotion}
+              onChange={setReduceMotion}
+            />
+            <PreferenceToggle
+              title="Ambient mode"
+              description="Let a few covers drift quietly behind Home. This setting is off by default."
+              checked={ambientMode}
+              onChange={setAmbientMode}
+            />
           </div>
         </section>
 
@@ -271,38 +313,36 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
             Icon={Upload}
             title="Cloud Sync"
             description="Your data stays available locally and syncs to your Supabase account when connected."
-            trailing={<span className={`rounded-full border px-3 py-1 text-[11px] font-semibold ${cloudSyncStatus === 'synced' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-line bg-ink/40 text-muted'}`}>{cloudStatusLabel}</span>}
+            trailing={<span className="text-[11px] font-semibold text-muted">{cloudStatusLabel}</span>}
           />
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-line bg-ink/35 p-4">
+            <div className="py-2 sm:pr-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Signed in as</p>
               <p className="mt-2 break-all text-sm font-semibold text-white/90">{isDemo ? 'Demo mode · local data only' : user?.email || (isConfigured ? 'Not signed in' : 'Supabase is not configured')}</p>
             </div>
-            <div className="rounded-2xl border border-line bg-ink/35 p-4">
+            <div className="py-2 sm:pl-4">
               <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">Last synced</p>
               <p className="mt-2 text-sm font-semibold text-white/90">{lastSyncedLabel}</p>
             </div>
           </div>
           {(cloudSyncError || cloudActionMessage) && (
-            <p role="status" className="mt-3 rounded-xl border border-accent/30 bg-accent/10 px-4 py-3 text-xs text-accent">
+            <p role="status" className="mt-3 pt-3 text-xs text-muted">
               {cloudActionMessage || cloudSyncError}
             </p>
           )}
           {user && (
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button type="button" onClick={handleSyncNow} disabled={syncBusy} className={BUTTON_PRIMARY}>
-                {syncBusy ? 'Syncing…' : 'Sync Now'}
-              </button>
-              <button type="button" onClick={handleSignOut} disabled={signOutBusy} className={BUTTON_SECONDARY}>
-                {signOutBusy ? 'Signing out…' : 'Sign Out'}
+                Sync Now
+                {syncBusy && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />}
               </button>
             </div>
           )}
         </section>
 
-        <AchFileSyncSection data={data} />
+        <YourDataSection data={data} onExport={onExport} onImport={onImport} onImportFile={onImportFile} importInputRef={importInputRef} onRestoreTrackers={handleRestoreTrackers} />
 
-        <section className="rounded-3xl border border-accent/30 bg-surface p-6 sm:p-8">
+        <section className={CARD_CLASS}>
           <SectionHeading
             Icon={Trash}
             title="Danger Zone"
@@ -336,15 +376,16 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
               />
             </label>
             <div className="flex items-end">
-              <button type="submit" disabled={passwordBusy || !user} className={`${BUTTON_PRIMARY} w-full`}>
-                {passwordBusy ? "Saving…" : "Change Password"}
+              <button type="submit" disabled={passwordBusy || !user} className={`${BUTTON_SECONDARY} w-full`}>
+                Change Password
+                {passwordBusy && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />}
               </button>
             </div>
           </form>
           {passwordMessage && <p role="status" className="mt-3 text-xs text-muted">{passwordMessage}</p>}
-          <div className="mt-6 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="mt-6 flex flex-col gap-3 pt-5 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs leading-relaxed text-muted">Your account remains active. Books, diary entries, notes, logs and focus history are cleared on this device and queued for cloud sync.</p>
-            <button type="button" onClick={resetAll} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl border border-accent/40 px-4 py-2.5 text-sm font-semibold text-accent transition hover:bg-accent/10">
+            <button type="button" onClick={resetAll} className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 px-2 py-2.5 text-sm font-semibold text-muted transition hover:text-white">
               <Trash className="h-4 w-4" /> Reset All Data
             </button>
           </div>
@@ -355,11 +396,11 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
             Icon={Clock}
             title="Focus History"
             description="A record of completed focus sessions from your Pomodoro timer."
-            trailing={<span className="rounded-full border border-line bg-ink/40 px-3 py-1 text-[11px] font-semibold text-muted">{pomo.length} sessions</span>}
+            trailing={<span className="text-[11px] font-semibold text-muted">{pomo.length} sessions</span>}
           />
           <div className="mb-5 grid gap-3 sm:grid-cols-3">
             {stats.map(stat => (
-              <div key={stat.label} className="rounded-2xl border border-line bg-ink/35 p-4">
+              <div key={stat.label} className="py-3">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">{stat.label}</p>
                 <p className="mt-2 font-display text-3xl font-black tabular-nums">{stat.value}</p>
                 <p className="mt-0.5 text-xs text-muted">minutes focused</p>
@@ -367,18 +408,18 @@ export function Settings({ theme, setTheme, onShowWhatsNew }) {
             ))}
           </div>
           {pomo.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-line bg-ink/20 px-5 py-10 text-center">
+            <div className="py-8 text-center">
               <p className="text-sm font-semibold text-white/80">No completed sessions yet</p>
               <p className="mt-1 text-xs text-muted">Finish a focus session and it will appear here.</p>
             </div>
           ) : (
-            <div className="max-h-[26rem] overflow-y-auto rounded-2xl border border-line">
+            <div className="max-h-[26rem] overflow-y-auto divide-y divide-line">
               {pomo.map((session, index) => (
-                <div key={session.id || `${session.date}-${session.time}-${index}`} className={`flex items-center gap-3 bg-ink/20 px-4 py-3 text-sm ${index ? "border-t border-line" : ""}`}>
+                <div key={session.id || `${session.date}-${session.time}-${index}`} className="flex items-center gap-3 py-3 text-sm">
                   <span className="h-2 w-2 shrink-0 rounded-full bg-accent" />
                   <span className="font-medium text-white/85">{formatMonthDay(session.date)}</span>
                   <span className="text-xs text-muted">{session.time || "—"}</span>
-                  <span className="ml-auto font-display font-bold tabular-nums text-accent">{session.minutes} min</span>
+                  <span className="ml-auto font-display font-bold tabular-nums text-white">{session.minutes} min</span>
                 </div>
               ))}
             </div>

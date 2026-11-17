@@ -56,9 +56,14 @@ export function AchillesProvider({ children, demoMode = false, initialData = def
   const [cloudSyncError, setCloudSyncError] = useState('');
   const [lastSynced, setLastSynced] = useState(null);
   const [toastMessage, setToastMessage] = useState('');
+  const [undoQueue, setUndoQueue] = useState([]);
+  const undoQueueRef = useRef([]);
+  const [pendingDeleteKeys, setPendingDeleteKeys] = useState(() => new Set());
   const stateRef = useRef(state);
   const lastCloudSnapshotRef = useRef(null);
   const toastTimerRef = useRef(null);
+  const undoTransactionsRef = useRef(new Map());
+  const undoSequenceRef = useRef(0);
   const userId = user?.id;
   const userDisplayName = user ? getUserDisplayName(user) : '';
   const cloudReady = activeDemoMode || !userId || cloudReadyUserId === userId;
@@ -67,6 +72,55 @@ export function AchillesProvider({ children, demoMode = false, initialData = def
     setToastMessage(message);
     clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToastMessage(''), 4500);
+  }, []);
+
+  const finishUndo = useCallback((id, restore) => {
+    const transaction = undoTransactionsRef.current.get(id);
+    if (!transaction) return;
+    clearTimeout(transaction.timer);
+    undoTransactionsRef.current.delete(id);
+    const nextQueue = undoQueueRef.current.filter(item => item.id !== id);
+    undoQueueRef.current = nextQueue;
+    setUndoQueue(nextQueue);
+    setPendingDeleteKeys(previous => {
+      const next = new Set(previous);
+      next.delete(transaction.key);
+      return next;
+    });
+    if (!restore) transaction.commit();
+  }, []);
+
+  const stageDelete = useCallback(({ key, message, commit }) => {
+    const id = ++undoSequenceRef.current;
+    setPendingDeleteKeys(previous => new Set(previous).add(key));
+    const transaction = {
+      id,
+      key,
+      timer: setTimeout(() => finishUndo(id, false), 8000),
+      commit,
+    };
+    undoTransactionsRef.current.set(id, transaction);
+    const nextQueue = [...undoQueueRef.current, { id, message }];
+    undoQueueRef.current = nextQueue;
+    setUndoQueue(nextQueue);
+  }, [finishUndo]);
+
+  const undoLatest = useCallback(() => {
+    const latest = undoQueueRef.current[undoQueueRef.current.length - 1];
+    if (latest) finishUndo(latest.id, true);
+  }, [finishUndo]);
+
+  const dismissLatest = useCallback(() => {
+    const latest = undoQueueRef.current[undoQueueRef.current.length - 1];
+    if (latest) finishUndo(latest.id, false);
+  }, [finishUndo]);
+
+  useEffect(() => () => {
+    for (const transaction of undoTransactionsRef.current.values()) {
+      clearTimeout(transaction.timer);
+      transaction.commit();
+    }
+    undoTransactionsRef.current.clear();
   }, []);
 
   useEffect(() => {
@@ -345,11 +399,33 @@ export function AchillesProvider({ children, demoMode = false, initialData = def
     }));
   }, []);
 
+  const visibleData = {
+    ...state,
+    books: state.books.filter(book => !pendingDeleteKeys.has(`${book.category === 'book' ? 'book' : 'title'}:${book.id}`)),
+    diary: state.diary.filter(entry => !pendingDeleteKeys.has(`diary:${entry.id}`)),
+    notes: state.notes.filter(note => !pendingDeleteKeys.has(`note:${note.id}`)),
+    trackers: state.trackers.filter(tracker => !pendingDeleteKeys.has(`habit:${tracker.id}`)),
+  };
+  const currentCloudSnapshot = userId && supabase ? JSON.stringify(toCloudState(state)) : null;
+  const hasPendingSync = Boolean(
+    !activeDemoMode
+    && userId
+    && supabase
+    && (cloudSyncStatus === 'offline'
+      || cloudSyncStatus === 'syncing'
+      || (cloudAccountReadyId === userId && currentCloudSnapshot !== lastCloudSnapshotRef.current)),
+  );
   const value = {
     cloudReady,
+    hasPendingSync,
     cloudSyncError,
     cloudSyncStatus,
-    data: state,
+    data: visibleData,
+    pendingDeleteKeys,
+    undoToast: undoQueue[undoQueue.length - 1] || null,
+    undoLatest,
+    dismissLatest,
+    stageDelete,
     isDemo: activeDemoMode,
     lastSynced,
     notify,

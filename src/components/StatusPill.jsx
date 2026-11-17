@@ -1,15 +1,11 @@
 import React from 'react';
 
 export function StatusPill({ status, className = "" }) {
-  const colorClass = 
-    status === "Read" || status === "Watched" 
-      ? "border-accent/40 bg-accent/15 text-accent" 
-      : status === "Currently Reading" || status === "In progress" 
-        ? "border-white/25 bg-white/10 text-white" 
-        : "border-line bg-black/55 text-muted";
+  const isComplete = status === "Read" || status === "Watched";
 
   return (
-    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${colorClass} ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide ${isComplete ? "text-accent" : "text-muted"} ${className}`}>
+      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${isComplete ? "bg-accent" : "bg-muted"}`} />
       {status}
     </span>
   );

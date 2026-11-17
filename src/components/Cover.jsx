@@ -1,15 +1,11 @@
 import React, { useState } from 'react';
-import { getHue } from '../utils/helpers';
-
 export function Cover({ book, className = "" }) {
   const [failedCover, setFailedCover] = useState(null);
   const showImage = !!book.cover && failedCover !== book.cover;
-  const hue = getHue(book.title);
 
   return (
     <div 
-      className={`relative h-full w-full overflow-hidden ${className}`} 
-      style={{ background: `linear-gradient(155deg, hsl(${hue} 42% 27%), #121212 72%)` }}
+      className={`relative h-full w-full overflow-hidden bg-surface2 ${className}`}
     >
       {showImage ? (
         <img 
@@ -18,7 +14,7 @@ export function Cover({ book, className = "" }) {
           alt={book.title ? `Cover of ${book.title}` : "Book cover"} 
           loading="lazy" 
           onError={() => setFailedCover(book.cover)}
-          className="h-full w-full object-cover" 
+          className="h-full w-full object-cover"
         />
       ) : (
         <div className="flex h-full w-full flex-col justify-between p-3">

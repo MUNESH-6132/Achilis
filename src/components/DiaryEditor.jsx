@@ -5,6 +5,7 @@ import { countWords, formatMonthDay, generateId, getCurrentTime, getToday, parse
 import { uploadMediaToSupabase } from '../utils/media';
 import { Modal } from './Modal';
 import { Edit, Trash, X } from './Icons';
+import { useUndoToast } from '../ui/useUndoToast';
 
 const MOODS = [
   { value: 1, emoji: "😞", label: "Rough" },
@@ -14,9 +15,9 @@ const MOODS = [
   { value: 5, emoji: "😄", label: "Great" }
 ];
 
-const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-accent/70 focus:outline-none";
-const BUTTON_PRIMARY = "inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition duration-200 hover:bg-[#ff6a1f] active:scale-[.98]";
-const BUTTON_SECONDARY = "inline-flex items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-semibold text-white/80 transition duration-200 hover:border-accent/60 hover:bg-white/[0.04] hover:text-white active:scale-[.98]";
+const INPUT_CLASS = "w-full rounded-2xl border border-line bg-ink px-4 py-3 text-sm text-text placeholder:text-muted/60 outline-none transition-colors focus:border-accent/50";
+const BUTTON_PRIMARY = "inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-ink transition duration-200 hover:bg-accent/90 active:scale-[.98]";
+const BUTTON_SECONDARY = "inline-flex items-center justify-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-semibold text-text/80 transition duration-200 hover:border-accent/60 hover:bg-surface2 hover:text-text active:scale-[.98]";
 const MEDIA_FIELDS = ['video', 'audio', 'photo'];
 
 function isDataUrl(value) {
@@ -38,6 +39,7 @@ function createEntry(entry) {
 
 export function DiaryEditor({ entry, onClose, onSave }) {
   const { data, notify, update } = useAchilles();
+  const stageDelete = useUndoToast();
   const { user } = useAuth();
   const [form, setForm] = useState(() => createEntry(entry));
   const onSaveRef = useRef(onSave);
@@ -45,6 +47,7 @@ export function DiaryEditor({ entry, onClose, onSave }) {
   const [message, setMessage] = useState("");
   const [savedAt, setSavedAt] = useState(0);
   const [uploading, setUploading] = useState(false);
+  const [uploadFailed, setUploadFailed] = useState(false);
   const [listening, setListening] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [recordingKind, setRecordingKind] = useState(null);
@@ -60,6 +63,7 @@ export function DiaryEditor({ entry, onClose, onSave }) {
   const setField = (field, value) => {
     setForm(current => ({ ...current, [field]: value }));
     setMessage("");
+    setUploadFailed(false);
   };
 
   useEffect(() => {
@@ -133,6 +137,7 @@ export function DiaryEditor({ entry, onClose, onSave }) {
     if (uploadError?.code === 'MEDIA_TOO_LARGE') {
       setForm(preparedEntry);
       setMessage(uploadError.message);
+      setUploadFailed(false);
       uploadingRef.current = false;
       setUploading(false);
       return;
@@ -141,9 +146,11 @@ export function DiaryEditor({ entry, onClose, onSave }) {
     try {
       if (uploadError) {
         persistEntry(preparedEntry, { includeInlineMedia: true });
-        notify('Media upload failed. The entry was saved locally; its inline media has not been synced.');
+        setUploadFailed(true);
+        setMessage('Media upload failed. Your entry is saved locally; retry to upload the media.');
       } else {
         persistEntry(preparedEntry);
+        setUploadFailed(false);
       }
     } catch (error) {
       setMessage(error?.message || 'Could not save this diary entry.');
@@ -154,7 +161,10 @@ export function DiaryEditor({ entry, onClose, onSave }) {
     }
     uploadingRef.current = false;
     setUploading(false);
-    onClose();
+    if (!uploadError) {
+      notify(isNew ? "Diary entry saved." : "Diary changes saved.");
+      onClose();
+    }
   };
 
   const close = () => {
@@ -162,8 +172,11 @@ export function DiaryEditor({ entry, onClose, onSave }) {
   };
 
   const deleteEntry = () => {
-    if (!window.confirm("Delete this entry?")) return;
-    update(state => ({ ...state, diary: state.diary.filter(item => item.id !== form.id) }));
+    stageDelete({
+      key: `diary:${form.id}`,
+      message: `Deleted ${form.title || 'diary entry'}.`,
+      commit: () => update(state => ({ ...state, diary: state.diary.filter(item => item.id !== form.id) })),
+    });
     onClose();
   };
 
@@ -336,15 +349,15 @@ export function DiaryEditor({ entry, onClose, onSave }) {
   };
 
   return (
-    <Modal onClose={close} width="max-w-4xl">
-      <div className="flex max-h-[92vh] flex-col overflow-hidden">
+    <Modal onClose={close} width="max-w-4xl" title={isNew ? "New diary entry" : "Edit diary entry"} mobileSheet>
+      <div className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden md:h-auto md:max-h-[92vh]">
         <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-5">
           <div className="flex items-center gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent/15 text-accent">
               <Edit className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="font-display text-xl font-black leading-tight">{isNew ? "New entry" : "Edit entry"}</h2>
+              <h2 className="font-display text-xl font-bold tracking-tight">{isNew ? "New entry" : "Edit entry"}</h2>
               <p className="text-xs text-muted">{formatMonthDay(form.date)}</p>
             </div>
           </div>
@@ -392,14 +405,14 @@ export function DiaryEditor({ entry, onClose, onSave }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button type="button" onClick={toggleSpeech} aria-pressed={listening} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${listening ? "animate-pulse border-accent bg-accent/20 text-accent" : "border-line text-muted hover:border-accent/50 hover:text-white"}`}>
+            <button type="button" onClick={toggleSpeech} aria-pressed={listening} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${listening ? "border-accent bg-accent/20 text-accent" : "border-line text-muted hover:border-accent/50 hover:text-white"}`}>
               {listening && <span className="h-2 w-2 rounded-full bg-accent" />}
               {listening ? "Listening… tap to stop" : "Speak instead of typing"}
             </button>
-            <button type="button" onClick={() => startRecording("audio")} aria-pressed={recordingKind === "audio"} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${recordingKind === "audio" ? "animate-pulse border-accent bg-accent/20 text-accent" : "border-line text-muted hover:border-accent/50 hover:text-white"}`}>
+            <button type="button" onClick={() => startRecording("audio")} aria-pressed={recordingKind === "audio"} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${recordingKind === "audio" ? "border-accent bg-accent/20 text-accent" : "border-line text-muted hover:border-accent/50 hover:text-white"}`}>
               {recordingKind === "audio" ? "Stop recording" : "Voice note"}
             </button>
-            <button type="button" onClick={() => startRecording("video")} aria-pressed={recordingKind === "video"} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${recordingKind === "video" ? "animate-pulse border-accent bg-accent/20 text-accent" : "border-line text-muted hover:border-accent/50 hover:text-white"}`}>
+            <button type="button" onClick={() => startRecording("video")} aria-pressed={recordingKind === "video"} className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition ${recordingKind === "video" ? "border-accent bg-accent/20 text-accent" : "border-line text-muted hover:border-accent/50 hover:text-white"}`}>
               {recordingKind === "video" ? "Stop video" : "Video"}
             </button>
             <button type="button" onClick={openCamera} className="flex items-center gap-1.5 rounded-full border border-line px-3 py-1.5 text-[11px] font-semibold text-muted transition hover:border-accent/50 hover:text-white">
@@ -418,24 +431,24 @@ export function DiaryEditor({ entry, onClose, onSave }) {
               <option value="">Mention a title…</option>
               {data.books.filter(book => book.title).map(book => <option key={book.id} value={book.title}>{book.title}</option>)}
             </select>
-            <span className="text-[10px] text-muted">@ links a book or film</span>
+            <span className="text-[10px] text-muted">Use @[Title] to link a title</span>
           </div>
 
           {form.photo && (
-            <div className="flex items-center gap-3 rounded-2xl border border-line bg-ink/40 p-2">
-              <img src={form.photo} alt="Diary snapshot" loading="lazy" decoding="async" className="h-20 w-20 rounded-xl object-cover" />
+            <div className="flex items-center gap-3 border-t border-line py-3">
+              <img src={form.photo} alt="Diary snapshot" loading="lazy" decoding="async" width="80" height="80" className="h-20 w-20 rounded-xl object-cover" />
               <button type="button" onClick={() => setField("photo", "")} className="text-[11px] font-semibold text-muted transition hover:text-accent">Remove snapshot</button>
             </div>
           )}
           {form.audio && (
-            <div className="flex items-center gap-3 rounded-2xl border border-line bg-ink/40 p-2">
+            <div className="flex items-center gap-3 border-t border-line py-3">
               <audio controls src={form.audio} className="min-w-0 flex-1" />
               <button type="button" onClick={() => setField("audio", "")} className="shrink-0 text-[11px] font-semibold text-muted transition hover:text-accent">Remove</button>
             </div>
           )}
           {form.video && (
-            <div className="space-y-2 rounded-2xl border border-line bg-ink/40 p-2">
-              <video controls src={form.video} className="w-full rounded-xl" />
+            <div className="space-y-2 border-t border-line py-3">
+              <video controls src={form.video} className="w-full rounded-lg" />
               <button type="button" onClick={() => setField("video", "")} className="text-[11px] font-semibold text-muted transition hover:text-accent">Remove video</button>
             </div>
           )}
@@ -446,7 +459,12 @@ export function DiaryEditor({ entry, onClose, onSave }) {
           </label>
           <div className="flex items-center justify-between text-[11px] text-muted">
             <span>{countWords(form.body)} words</span>
-            {message ? <span className="text-accent">{message}</span> : savedAt ? <span className="text-accent">✓ Draft saved</span> : null}
+            {message ? (
+              <span role={uploadFailed ? "alert" : "status"} className="inline-flex items-center gap-2 text-accent">
+                {message}
+                {uploadFailed && <button type="button" onClick={() => void save()} className="min-h-11 rounded-lg border border-line px-3 font-semibold text-white hover:bg-surface2">Retry upload</button>}
+              </span>
+            ) : savedAt ? <span role="status" className="text-accent">Saved</span> : null}
           </div>
         </div>
 
@@ -461,14 +479,15 @@ export function DiaryEditor({ entry, onClose, onSave }) {
           <div className="flex gap-2">
             <button type="button" className={BUTTON_SECONDARY} onClick={close} disabled={uploading}>Cancel</button>
             <button type="button" className={BUTTON_PRIMARY} onClick={() => void save()} disabled={uploading}>
-              {uploading ? "Uploading media…" : isNew ? "Save entry" : "Save changes"}
+              {isNew ? "Save entry" : "Save changes"}
+              {uploading && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />}
             </button>
           </div>
         </div>
 
         {cameraOpen && (
           <div className="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-4 bg-black/90 p-6">
-            <video ref={videoRef} playsInline muted className="max-h-[60vh] w-full max-w-md rounded-2xl border border-line object-cover" />
+            <video ref={videoRef} playsInline muted className="max-h-[60vh] w-full max-w-md rounded-2xl object-cover" />
             <div className="flex gap-2">
               <button type="button" onClick={takeSnapshot} className={BUTTON_PRIMARY}>Capture</button>
               <button type="button" onClick={closeCamera} className={BUTTON_SECONDARY}>Cancel</button>

@@ -65,8 +65,14 @@ export function AuthProvider({ children }) {
     setIsDemo(true);
   }, []);
 
-  const exitDemo = useCallback(() => {
+  const exitDemo = useCallback((createAccount = false) => {
     localStorage.removeItem(DEMO_MODE_KEY);
+    if (createAccount) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('auth', 'signup');
+      window.location.assign(url.href);
+      return;
+    }
     window.location.reload();
   }, []);
 

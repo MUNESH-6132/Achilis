@@ -200,4 +200,13 @@ export const demoData = {
     work: 25,
     break: 5,
   },
+  oracleAnswers: {
+    'q-sophia-1': {
+      answer: 'Susanna Clarke’s Piranesi reminded me that wonder is an active discipline, not an accident. Even in loneliness, the world can feel benevolent if observed with reverence.',
+      date: '2026-11-16',
+      updatedAt: 1794800000000,
+    },
+  },
+  oraclePinned: ['q-arete-1'],
+  oracleCustom: [],
 };

@@ -19,4 +19,7 @@ export const defaultState = {
     work: 25,
     break: 5,
   },
+  oracleAnswers: {},
+  oraclePinned: [],
+  oracleCustom: [],
 };

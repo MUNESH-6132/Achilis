@@ -1,111 +1,314 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAchilles } from '../context/AchillesContext';
-import { Aura } from './Aura';
-import { BookOpen, Play as Film } from './Icons';
+import { useAuth } from '../context/AuthContext';
+import { getHabitRecords } from '../utils/habitStore';
+import { habitTrackerV2 } from '../utils/features';
+import { useReduceMotion } from '../ui/motion';
+import { BookOpen, Film, Edit, Check } from './Icons';
+import { BookDetails } from './BookDetails';
+import { OlympusHero } from './OlympusHero';
+import { WeeklyReadingActivity } from './WeeklyReadingActivity';
+import { TheOdysseyTimeline } from './TheOdysseyTimeline';
+import { TheOracle } from './TheOracle';
 
-const getGreeting = (hour) => hour < 5 ? "Still up" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+function getTimestamp(value) {
+  if (typeof value === 'number') return value;
+  const parsed = Date.parse(value || '');
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
 
-export function Home({ onGo }) {
-  const { data } = useAchilles();
-  const n = data.books.filter(p => (p.category || "book") === "book");
-  const r = n.filter(p => p.status === "Read").length;
-  const s = data.books.filter(p => p.category === "movie" || p.category === "series");
-  const a = s.filter(p => p.status === "In progress").length;
-  const i = s.filter(p => p.status === "Watchlist").length;
-  const o = Array.isArray(data.diary) ? data.diary : [];
-  const u = Array.isArray(data.notes) ? data.notes : [];
-  
-  const cards = [
-    { id: "library", name: "Library", Icon: BookOpen, count: n.length, unit: n.length === 1 ? "book" : "books", line: r ? `${r} finished` : n.length ? "Nothing finished yet" : "Start your first book", blurb: "Covers, chapters and reading progress." },
-    { id: "entertainment", name: "Entertainment", Icon: Film, count: s.length, unit: s.length === 1 ? "title" : "titles", line: a ? `${a} in progress` : i ? `${i} on the watchlist` : "Add a film or series", blurb: "Films, series, shelves and tonight's pick." },
-    { id: "personal", name: "Personal", Icon: BookOpen, count: o.length + u.length, unit: o.length + u.length === 1 ? "entry" : "entries", line: `${o.length} diary · ${u.length} notes`, blurb: "Diary, logs and notes behind your PIN." }
-  ];
+function firstLine(value) {
+  return String(value || '').split(/\r?\n/).map(line => line.trim()).find(Boolean);
+}
 
-  const dateStr = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const [ix, setIx] = useState(0);
-  const cov = data.books.filter(b => b.cover);
-  const isM = b => b.category === "movie" || b.category === "series";
-  const goT = b => onGo(isM(b) ? "entertainment" : "library");
-  const cont = data.books.filter(b => b.status === "In progress" || b.status === "Currently Reading").slice(0, 10);
-  const ft = cov.length ? cov[ix % cov.length] : null;
-  const hero = cont[0] || ft;
+export function Home({ onGo, onAddBook, ambientMode = false }) {
+  const { data, update } = useAchilles();
+  const { isDemo, user } = useAuth();
+  const reduceMotion = useReduceMotion();
+  const [selectedBook, setSelectedBook] = useState(null);
+  const [habitRecords, setHabitRecords] = useState(null);
 
+  const ownerId = isDemo ? 'demo' : user?.id || 'local';
+
+  // Load habit records if habit tracker V2 is enabled
   useEffect(() => {
-    if (cov.length < 2) return;
-    const id = setInterval(() => setIx(q => q + 1), 6500);
-    return () => clearInterval(id);
-  }, [cov.length]);
+    if (!habitTrackerV2) return;
+    let active = true;
+    getHabitRecords(ownerId)
+      .then(records => {
+        if (active) setHabitRecords(records);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [ownerId]);
 
-  const pill = { border: "1px solid rgb(var(--c-line))", borderRadius: 999, padding: "10px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "rgb(var(--c-text))", background: "rgb(var(--c-text) / .06)", backdropFilter: "blur(8px)" };
+  // Data slices
+  const books = useMemo(() => {
+    return (Array.isArray(data.books) ? data.books : []).filter(
+      item => (item.category || 'book') === 'book'
+    );
+  }, [data.books]);
+
+  const screens = useMemo(() => {
+    return (Array.isArray(data.books) ? data.books : []).filter(
+      item => item.category === 'movie' || item.category === 'series'
+    );
+  }, [data.books]);
+
+  const diary = Array.isArray(data.diary) ? data.diary : [];
+  const notes = Array.isArray(data.notes) ? data.notes : [];
+  const legacyTrackers = Array.isArray(data.trackers) ? data.trackers : [];
+  const legacyLogs = Array.isArray(data.logs) ? data.logs : [];
+
+  const habits = habitRecords?.habits?.length ? habitRecords.habits : legacyTrackers;
+  const habitLogs = habitRecords?.logs?.length ? habitRecords.logs : legacyLogs;
+
+  // Compile The Odyssey Timeline activities from real user data
+  const odysseyActivities = useMemo(() => {
+    const list = [];
+
+    // 1. Books
+    books.forEach(b => {
+      const createdTime = getTimestamp(b.createdAt || b.date);
+      if (createdTime) {
+        list.push({
+          id: b.id,
+          eventType: 'book_started',
+          title: b.title || 'Untitled book',
+          detail: b.author ? `by ${b.author}` : 'Added to Library',
+          badge: 'Book Started',
+          category: 'book',
+          cover: b.cover,
+          timestamp: createdTime,
+          Icon: BookOpen,
+        });
+      }
+
+      if (b.status === 'Read') {
+        const finishTime = getTimestamp(b.finishedAt || b.readAt || b.completedAt || b.updatedAt);
+        if (finishTime && finishTime !== createdTime) {
+          list.push({
+            id: b.id,
+            eventType: 'book_finished',
+            title: b.title || 'Untitled book',
+            detail: b.author ? `by ${b.author}` : 'Completed reading',
+            badge: 'Completed',
+            category: 'book',
+            cover: b.cover,
+            timestamp: finishTime,
+            Icon: Check,
+          });
+        }
+      }
+
+      if (b.status === 'Currently Reading' && Number(b.currentPage) > 0 && b.updatedAt) {
+        const updateTime = getTimestamp(b.updatedAt);
+        if (updateTime !== createdTime) {
+          list.push({
+            id: b.id,
+            eventType: 'reading_progress',
+            title: b.title || 'Untitled book',
+            detail: `Reached page ${b.currentPage}`,
+            badge: `Page ${b.currentPage}`,
+            category: 'book',
+            cover: b.cover,
+            timestamp: updateTime,
+            Icon: BookOpen,
+          });
+        }
+      }
+    });
+
+    // 2. Screens
+    screens.forEach(s => {
+      const createdTime = getTimestamp(s.createdAt || s.date);
+      if (createdTime) {
+        list.push({
+          id: s.id,
+          eventType: 'screen_added',
+          title: s.title || 'Untitled title',
+          detail: s.creator || (s.category === 'series' ? 'Series' : 'Film'),
+          badge: s.category === 'series' ? 'Series Added' : 'Film Added',
+          category: s.category,
+          cover: s.cover,
+          timestamp: createdTime,
+          Icon: Film,
+        });
+      }
+
+      if (s.status === 'Watched') {
+        const finishTime = getTimestamp(s.finishedAt || s.updatedAt);
+        if (finishTime && finishTime !== createdTime) {
+          list.push({
+            id: s.id,
+            eventType: 'screen_watched',
+            title: s.title || 'Untitled title',
+            detail: 'Watched in Cinema',
+            badge: 'Watched',
+            category: s.category,
+            cover: s.cover,
+            timestamp: finishTime,
+            Icon: Check,
+          });
+        }
+      }
+    });
+
+    // 3. Diary reflections
+    diary.forEach(entry => {
+      const time = getTimestamp(entry.updated || entry.createdAt || `${entry.date || ''}T${entry.time || '00:00'}`);
+      if (time && (entry.title || entry.body || entry.content)) {
+        list.push({
+          id: entry.id,
+          eventType: 'diary_entry',
+          title: String(entry.title || '').trim() || firstLine(entry.body || entry.content) || 'Diary reflection',
+          detail: 'Personal reflection',
+          badge: 'Reflected',
+          category: 'diary',
+          cover: entry.photo || '',
+          timestamp: time,
+          Icon: Edit,
+        });
+      }
+    });
+
+    // Deduplicate by unique id + date (YYYY-MM-DD)
+    const seen = new Set();
+    const unique = [];
+    for (const item of list) {
+      const ts = Number(item.timestamp) || 0;
+      const d = ts ? new Date(ts) : new Date();
+      const dateKey = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+      const key = `${item.id}-${dateKey}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(item);
+      }
+    }
+
+    return unique.sort((a, b) => b.timestamp - a.timestamp);
+  }, [books, screens, diary]);
+
+  // Handle clicking timeline item
+  const handleOpenTimelineItem = (act) => {
+    if (act.category === 'book') {
+      const targetBook = books.find(b => b.id === act.id);
+      if (targetBook) {
+        setSelectedBook(targetBook);
+        return;
+      }
+      onGo('collection', 'books');
+    } else if (act.category === 'movie' || act.category === 'series') {
+      onGo('collection', 'screen');
+    } else if (act.category === 'diary') {
+      onGo('journal', 'diary');
+    }
+  };
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <section style={{ position: "relative", overflow: "hidden", borderRadius: 32, border: "1px solid rgb(var(--c-line))", background: "rgb(var(--c-ink))", minHeight: 430, marginBottom: 28 }}>
-        {ft && <div key={"bg" + ft.id} style={{ position: "absolute", inset: 0, backgroundImage: "url(" + ft.cover + ")", backgroundSize: "cover", backgroundPosition: "center", filter: "blur(30px) saturate(1.4)", opacity: .6, transform: "scale(1.25)" }} />}
-        <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,rgb(var(--c-ink)) 10%,rgb(var(--c-ink) / .6) 55%,rgb(var(--c-ink) / .15)),linear-gradient(0deg,rgb(var(--c-ink)),transparent 50%)" }} />
-        
-        <div style={{ position: "relative", display: "flex", flexWrap: "wrap", gap: 32, alignItems: "center", justifyContent: "space-between", padding: "clamp(24px,5vw,52px)" }}>
-          <div style={{ flex: "1 1 320px", maxWidth: 520, animation: "achIn .8s both" }}>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">{dateStr}</p>
-            <h1 className="mt-3 font-display font-black tracking-tight" style={{ fontSize: "clamp(36px,6vw,64px)", lineHeight: 1.02 }}>{getGreeting(new Date().getHours())}, {data.user}.</h1>
-            <p className="mt-4 text-sm text-muted">{n.length} books · {s.length} films and series{a ? " · " + a + " in progress" : ""} · {o.length + u.length} personal entries</p>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 26 }}>
-              {hero && <button type="button" onClick={() => goT(hero)} style={{ ...pill, background: "rgb(var(--c-accent))", borderColor: "rgb(var(--c-accent))", color: "rgb(var(--c-ink))" }}>Continue {hero.title.length > 26 ? hero.title.slice(0, 26) + "…" : hero.title}</button>}
-              <button type="button" onClick={() => onGo("library")} style={pill}>Library</button>
-              <button type="button" onClick={() => onGo("entertainment")} style={pill}>Entertainment</button>
-            </div>
-          </div>
-          {ft && (
-            <button key={"p" + ft.id} type="button" onClick={() => goT(ft)} aria-label={ft.title} style={{ flex: "none", animation: "achIn .9s both" }}>
-              <img src={ft.cover} alt={ft.title} loading="lazy" decoding="async" style={{ width: "clamp(130px,22vw,210px)", aspectRatio: "2/3", objectFit: "cover", borderRadius: 20, boxShadow: "0 40px 80px -20px rgb(var(--c-accent) / .45),0 20px 40px rgba(0,0,0,.7)", animation: "achFloat 7s ease-in-out infinite", willChange: "transform" }} />
-            </button>
-          )}
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 py-8 md:py-12">
+      {/* 1. Hero: Where I Left Off */}
+      <OlympusHero
+        books={books}
+        screens={screens}
+        onOpenBook={book => setSelectedBook(book)}
+        onContinueReading={book => setSelectedBook(book)}
+        onGoLibrary={() => onGo('collection', 'books')}
+      />
+
+      {/* 2. Weekly Reading Activity Strip */}
+      <div className="mb-14">
+        <WeeklyReadingActivity
+          books={books}
+          habits={habits}
+          habitLogs={habitLogs}
+          diary={diary}
+        />
+      </div>
+
+      {/* 3. The Odyssey — Organic Activity Timeline (Clio) */}
+      <TheOdysseyTimeline
+        activities={odysseyActivities}
+        onOpenItem={handleOpenTimelineItem}
+      />
+
+      {/* 4. The Oracle — Daily Reflections */}
+      <TheOracle />
+
+      {/* 5. Editorial Universe Pulse (Summary Statistics) */}
+      <section className="mt-16 pt-8 border-t border-line">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <button
+            type="button"
+            onClick={() => onGo('collection', 'books')}
+            className="rounded-2xl border border-line bg-surface/60 p-5 text-left hover:border-accent/40 hover:bg-surface transition-all group"
+          >
+            <span className="block text-[10px] font-mono uppercase tracking-widest text-muted group-hover:text-accent transition-colors">
+              Athena · Library
+            </span>
+            <span className="font-display text-3xl font-bold text-text mt-2 block">
+              {books.length}
+            </span>
+            <span className="text-xs text-muted block mt-0.5">Volumes catalogued</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onGo('collection', 'screen')}
+            className="rounded-2xl border border-line bg-surface/60 p-5 text-left hover:border-accent/40 hover:bg-surface transition-all group"
+          >
+            <span className="block text-[10px] font-mono uppercase tracking-widest text-muted group-hover:text-accent transition-colors">
+              Apollo · Cinema
+            </span>
+            <span className="font-display text-3xl font-bold text-text mt-2 block">
+              {screens.length}
+            </span>
+            <span className="text-xs text-muted block mt-0.5">Films & series</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onGo('journal', 'diary')}
+            className="rounded-2xl border border-line bg-surface/60 p-5 text-left hover:border-accent/40 hover:bg-surface transition-all group"
+          >
+            <span className="block text-[10px] font-mono uppercase tracking-widest text-muted group-hover:text-accent transition-colors">
+              Mnemosyne · Reflections
+            </span>
+            <span className="font-display text-3xl font-bold text-text mt-2 block">
+              {diary.length + notes.length}
+            </span>
+            <span className="text-xs text-muted block mt-0.5">Diary & notes</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onGo('journal', 'habits')}
+            className="rounded-2xl border border-line bg-surface/60 p-5 text-left hover:border-accent/40 hover:bg-surface transition-all group"
+          >
+            <span className="block text-[10px] font-mono uppercase tracking-widest text-muted group-hover:text-accent transition-colors">
+              Daily Rituals
+            </span>
+            <span className="font-display text-3xl font-bold text-text mt-2 block">
+              {habits.length}
+            </span>
+            <span className="text-xs text-muted block mt-0.5">Habits active</span>
+          </button>
         </div>
       </section>
 
-      {cont.length ? (
-        <div style={{ marginBottom: 28 }}>
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Continue</p>
-          <div style={{ display: "flex", gap: 14, overflowX: "auto", paddingBottom: 8 }}>
-            {cont.map(b => (
-              <button key={b.id} type="button" onClick={() => goT(b)} style={{ flex: "none", width: 132, textAlign: "left" }}>
-                <div style={{ aspectRatio: "2/3", borderRadius: 16, overflow: "hidden", background: "rgb(var(--c-surface2))", border: "1px solid rgb(var(--c-line))" }}>
-                  {b.cover && <img src={b.cover} alt="" loading="lazy" decoding="async" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
-                </div>
-                <div className="mt-1.5 text-xs font-semibold" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.title}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mb-7 flex flex-wrap items-center gap-6 rounded-[28px] border border-line bg-surface p-6">
-        <div style={{ width: 150, height: 150, flex: "none" }}>
-          <Aura entries={o} />
-        </div>
-        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">Aura</p>
-          <h2 className="mt-1 font-display text-2xl font-black tracking-tight">Your week in colour</h2>
-          <p className="mt-2 max-w-md text-xs text-muted">{o.length ? "Shaped by the mood of your last seven diary days. Brighter days warm it toward orange, heavier days cool it toward blue." : "Write a diary entry and this starts to take shape."}</p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-3">
-        {cards.map(({ id, name, Icon, count, unit, line, blurb }) => (
-          <button key={id} type="button" onClick={() => onGo(id)} className="group relative flex min-h-[230px] flex-col rounded-[28px] border border-line bg-surface p-6 text-left transition duration-300 hover:-translate-y-1 hover:border-accent/50 hover:shadow-[0_30px_60px_-30px_rgb(var(--c-accent) / 0.45)]" style={{ overflow: "hidden" }}>
-            <span className="grid h-12 w-12 place-items-center rounded-2xl bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span>
-            <span className="mt-auto block pt-8">
-              <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{name}</span>
-              <span className="mt-1 flex items-baseline gap-2">
-                <span className="font-display text-4xl font-black tracking-tight">{count}</span>
-                <span className="text-xs text-muted">{unit}</span>
-              </span>
-              <span className="mt-3 block text-xs font-medium text-white/75">{line}</span>
-              <span className="mt-1 block text-xs text-muted">{blurb}</span>
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* Book Details Modal */}
+      {selectedBook && (
+        <BookDetails
+          book={selectedBook}
+          onClose={() => setSelectedBook(null)}
+          onEdit={() => {
+            setSelectedBook(null);
+            onGo('collection', 'books');
+          }}
+        />
+      )}
     </div>
   );
 }

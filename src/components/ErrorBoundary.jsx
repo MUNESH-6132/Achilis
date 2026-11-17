@@ -23,7 +23,7 @@ export class ErrorBoundary extends React.Component {
               <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
           </div>
-          <h1 className="mb-2 font-display text-2xl font-bold">Something went wrong</h1>
+          <h1 className="mb-2 font-display text-2xl font-bold tracking-tight">Something went wrong</h1>
           <p className="mb-6 max-w-md text-muted">A component crashed, but your data is safe. Please refresh the page to try again.</p>
           <button onClick={() => window.location.reload()} className="rounded-xl bg-accent px-6 py-2.5 text-sm font-bold text-ink hover:bg-accent/90">
             Refresh App

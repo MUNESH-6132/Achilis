@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { AchillesProvider, useAchilles } from './context/AchillesContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -8,26 +9,37 @@ import { Entertainment } from './components/Entertainment';
 import { Personal } from './components/Personal';
 import { Settings } from './components/Settings';
 import { WhatsNew } from './components/WhatsNew';
-import { Timer } from './components/Timer';
 import { SplashScreen } from './components/SplashScreen';
 import { Splash } from './components/Splash';
-import { DiaryEditor } from './components/DiaryEditor';
-import { NoteEditor } from './components/NoteEditor';
-import { UserMenu } from './components/UserMenu';
-import { Search, Download, Upload, BookOpen, Play as Film, Edit, Grid as SettingsIcon } from './components/Icons';
-import { getTodayDateString, generateId, getToday } from './utils/helpers';
+import { Search } from './components/Icons';
+import { getTodayDateString } from './utils/helpers';
 import { demoData } from './utils/mockData';
+import { Toast } from './ui/Toast';
+import { Button } from './ui/Primitives';
+import { MotionPreferenceContext, useReduceMotion } from './ui/motion';
+import { HeaderNav } from './components/HeaderNav';
+import { QuickAddHermes } from './components/QuickAddHermes';
+import { HelmetLogo } from './components/HelmetLogo';
 
 const LockScreen = () => {
   const { saveError } = useAchilles();
   const { authError, isConfigured, signIn, signUp, startDemo } = useAuth();
-  const [mode, setMode] = useState('signin');
+  const [requestedSignUp] = useState(() => new URLSearchParams(window.location.search).get('auth') === 'signup');
+  const [showAuth, setShowAuth] = useState(requestedSignUp);
+  const [mode, setMode] = useState(requestedSignUp ? 'signup' : 'signin');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!requestedSignUp) return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete('auth');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }, [requestedSignUp]);
 
   const handleSubmit = async event => {
     event.preventDefault();
@@ -70,64 +82,84 @@ const LockScreen = () => {
   };
 
   return (
-    <div className="relative z-[100] flex min-h-screen items-center justify-center overflow-hidden px-5 py-12">
-      <div className="pointer-events-none absolute -top-48 left-1/2 h-[460px] w-[460px] -translate-x-1/2 rounded-full bg-accent/25 blur-[150px]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-56 bg-gradient-to-t from-accent/[0.06] to-transparent" />
-      <div className="rise-in relative w-full max-w-sm">
+    <div className="relative z-[100] flex min-h-screen items-center justify-center overflow-hidden bg-ink px-5 py-12">
+      <div className="relative w-full max-w-md">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-5 grid h-14 w-14 place-items-center rounded-2xl bg-accent font-display text-2xl font-black text-ink shadow-[0_24px_60px_-24px_#ff5500]">A</div>
-          <h1 className="font-display text-4xl font-black tracking-tight">Achilis</h1>
-          <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-muted">A quiet home for your books, days and habits.</p>
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-surface border border-line shadow-2xl mb-4">
+            <HelmetLogo className="h-10 w-10 text-accent" />
+          </div>
+          <h1 className="font-serif text-5xl tracking-widest uppercase font-bold text-text">Achilis</h1>
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.25em] text-accent font-semibold">A universe of your own.</p>
+          <p className="mx-auto mt-3 max-w-xs text-xs leading-relaxed text-muted">A personal space for collecting knowledge, entertainment, memories and experiences.</p>
         </div>
-        <form onSubmit={handleSubmit} className="rounded-[28px] border border-line bg-surface/90 p-6 shadow-2xl">
-          {saveError && <p role="alert" className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">Browser storage is unavailable or full. Existing data may not load or save correctly.</p>}
-          {authError && !error && <p role="alert" className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">{authError}</p>}
-          <div className="mb-5 grid grid-cols-2 rounded-xl border border-line bg-ink/50 p-1">
-            <button type="button" onClick={() => { setMode('signin'); setError(''); setMessage(''); }} aria-pressed={mode === 'signin'} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${mode === 'signin' ? 'bg-surface2 text-white' : 'text-muted hover:text-white'}`}>Sign In</button>
-            <button type="button" onClick={() => { setMode('signup'); setError(''); setMessage(''); }} aria-pressed={mode === 'signup'} className={`rounded-lg px-3 py-2 text-sm font-semibold transition ${mode === 'signup' ? 'bg-surface2 text-white' : 'text-muted hover:text-white'}`}>Sign Up</button>
-          </div>
-          {mode === 'signup' && (
-            <div className="mb-4">
-              <label htmlFor="auth-name" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Full name</label>
-              <input id="auth-name" className="w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white focus:border-accent/70 focus:outline-none" value={fullName} onChange={event => setFullName(event.target.value)} autoComplete="name" required />
-            </div>
+        <div className="space-y-5">
+          {saveError && <p role="alert" className="border-l-2 border-accent pl-3 text-xs text-muted">Browser storage is unavailable or full. Existing data may not load or save correctly.</p>}
+          {!showAuth ? (
+            <>
+              {authError && <p role="alert" className="border-l-2 border-accent pl-3 text-xs text-muted">{authError}</p>}
+              {error && <p role="alert" className="border-l-2 border-accent pl-3 text-xs text-muted">{error}</p>}
+              <button
+                type="button"
+                onClick={handleStartDemo}
+                className="w-full rounded-full bg-white px-6 py-5 text-lg font-bold text-black transition hover:bg-white/85"
+              >
+                Try Demo
+                <span className="mt-1 block text-sm font-medium">No signup required</span>
+              </button>
+              <button type="button" onClick={() => { setShowAuth(true); setError(''); setMessage(''); }} className="w-full text-center text-sm text-muted transition hover:text-white">
+                Already have an account? <span className="font-semibold text-white">Sign in</span>
+              </button>
+            </>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              {authError && !error && <p role="alert" className="border-l-2 border-accent pl-3 text-xs text-muted">{authError}</p>}
+              <div className="flex gap-6 border-b border-white/10">
+                <button type="button" onClick={() => { setMode('signin'); setError(''); setMessage(''); }} aria-pressed={mode === 'signin'} className={`min-h-11 border-b-2 text-sm font-semibold transition ${mode === 'signin' ? 'border-white text-white' : 'border-transparent text-muted hover:text-white'}`}>Sign In</button>
+                <button type="button" onClick={() => { setMode('signup'); setError(''); setMessage(''); }} aria-pressed={mode === 'signup'} className={`min-h-11 border-b-2 text-sm font-semibold transition ${mode === 'signup' ? 'border-white text-white' : 'border-transparent text-muted hover:text-white'}`}>Sign Up</button>
+              </div>
+              {mode === 'signup' && (
+                <div className="mb-4">
+                  <label htmlFor="auth-name" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Full name</label>
+                  <input id="auth-name" className="w-full border-0 border-b border-white/20 bg-transparent px-0 py-3 text-sm text-white focus:border-white focus:outline-none" value={fullName} onChange={event => setFullName(event.target.value)} autoComplete="name" required />
+                </div>
+              )}
+              <div className="mb-4">
+                <label htmlFor="auth-email" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Email</label>
+                <input id="auth-email" className="w-full border-0 border-b border-white/20 bg-transparent px-0 py-3 text-sm text-white focus:border-white focus:outline-none" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required />
+              </div>
+              <div className="mb-5">
+                <label htmlFor="auth-password" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Password</label>
+                <input id="auth-password" className="w-full border-0 border-b border-white/20 bg-transparent px-0 py-3 text-sm text-white focus:border-white focus:outline-none" type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
+              </div>
+              {error && <p className="border-l-2 border-accent pl-3 text-xs text-muted">{error}</p>}
+              {message && <p role="status" className="text-xs text-muted">{message}</p>}
+              <button type="submit" className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full bg-white px-4 py-3 text-sm font-bold text-black transition hover:bg-white/85 disabled:opacity-50" disabled={busy || !isConfigured}>
+                {mode === 'signup' ? "Create Account" : "Sign In"}
+                {busy && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />}
+              </button>
+              {!isConfigured && <p className="mt-3 text-center text-xs text-muted">Supabase environment variables are missing.</p>}
+              <button type="button" onClick={() => { setShowAuth(false); setError(''); setMessage(''); }} className="w-full text-center text-sm text-muted transition hover:text-white">Back to demo</button>
+            </form>
           )}
-          <div className="mb-4">
-            <label htmlFor="auth-email" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Email</label>
-            <input id="auth-email" className="w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white focus:border-accent/70 focus:outline-none" type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required />
-          </div>
-          <div className="mb-5">
-            <label htmlFor="auth-password" className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">Password</label>
-            <input id="auth-password" className="w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white focus:border-accent/70 focus:outline-none" type="password" value={password} onChange={event => setPassword(event.target.value)} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} required />
-          </div>
-          {error && <p className="mb-4 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-xs text-accent">{error}</p>}
-          {message && <p role="status" className="mb-4 rounded-xl border border-line bg-ink/40 px-3 py-2 text-xs text-muted">{message}</p>}
-          <button type="submit" className="w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-bold text-ink transition hover:bg-accent/90 disabled:opacity-50" disabled={busy || !isConfigured}>
-            {busy ? "One moment…" : mode === 'signup' ? "Create Account" : "Sign In"}
-          </button>
-          <button
-            type="button"
-            onClick={handleStartDemo}
-            className="mt-3 w-full rounded-xl border border-white/15 bg-white/[0.08] px-4 py-3 text-sm font-bold text-white shadow-lg backdrop-blur transition hover:border-accent/50 hover:bg-white/[0.13]"
-          >
-            Try the Demo <span className="font-medium text-white/65">(No signup required)</span>
-          </button>
-          {!isConfigured && <p className="mt-3 text-center text-xs text-muted">Supabase environment variables are missing.</p>}
-        </form>
+        </div>
       </div>
     </div>
   );
 };
 
 const AppContent = () => {
-  const { cloudReady, data, replaceAll, saveError, toastMessage, update } = useAchilles();
-  const { isDemo, user: authUser, loading: authLoading } = useAuth();
+  const { cloudReady, cloudSyncStatus, data, replaceAll, saveError, syncNow, toastMessage, undoToast, undoLatest, dismissLatest } = useAchilles();
+  const { exitDemo, isDemo, user: authUser, loading: authLoading } = useAuth();
+  const systemReduceMotion = useReduceMotion();
   const [space, setSpace] = useState('home');
+  const [collectionTab, setCollectionTab] = useState('books');
+  const [journalTab, setJournalTab] = useState('diary');
+  const [diaryPromptRequest, setDiaryPromptRequest] = useState(null);
+  const [referenceRequest, setReferenceRequest] = useState(null);
+  const [requestAddBook, setRequestAddBook] = useState(false);
   const [search, setSearch] = useState('');
-  const [fab, setFab] = useState(false);
-  const [quick, setQuick] = useState(null);
+  const [focusSearchRequested, setFocusSearchRequested] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
-  const [showSplash, setShowSplash] = useState(true);
   const [whatsNewPreference] = useState(() => {
     try {
       return { shouldShow: localStorage.getItem("achilles:whatsnew:v1") === null, error: false };
@@ -137,14 +169,94 @@ const AppContent = () => {
   });
   const [themePreference] = useState(() => {
     try {
-      return { value: localStorage.getItem("achilles:theme") || "ember", error: false };
+      const stored = localStorage.getItem("achilles:theme");
+      if (stored === 'light' || stored === 'paper') return { value: "light", error: false };
+      return { value: "dark", error: false };
     } catch {
-      return { value: "ember", error: true };
+      return { value: "dark", error: true };
     }
   });
-  const [preferenceError, setPreferenceError] = useState(whatsNewPreference.error || themePreference.error);
+  const [reduceMotionPreference] = useState(() => {
+    try {
+      return { value: localStorage.getItem('achilles:reduce-motion') === 'true', error: false };
+    } catch {
+      return { value: false, error: true };
+    }
+  });
+  const [ambientPreference] = useState(() => {
+    try {
+      return { value: localStorage.getItem('achilles:ambient') === 'true', error: false };
+    } catch {
+      return { value: false, error: true };
+    }
+  });
+  const [reduceMotionSetting, setReduceMotionSetting] = useState(reduceMotionPreference.value);
+  const [ambientMode, setAmbientMode] = useState(ambientPreference.value);
+  const reduceMotion = Boolean(systemReduceMotion || reduceMotionSetting);
+  const [preferenceError, setPreferenceError] = useState(
+    whatsNewPreference.error || themePreference.error || reduceMotionPreference.error || ambientPreference.error,
+  );
+  const [syncRetrying, setSyncRetrying] = useState(false);
+  const [syncRetryError, setSyncRetryError] = useState('');
   const fileRef = useRef(null);
-  const completeSplash = useCallback(() => setShowSplash(false), []);
+  const searchInputRef = useRef(null);
+  const [navigateTo, setNavigateTo] = useState(null);
+  const navigate = useCallback((nextSpace, subtab, addBook = false, diaryPrompt = '', filter) => {
+    setSpace(nextSpace);
+    setSearch('');
+    if (nextSpace === 'collection' && subtab) setCollectionTab(subtab);
+    if (nextSpace === 'journal' && subtab) setJournalTab(subtab);
+    setRequestAddBook(addBook);
+    setDiaryPromptRequest(diaryPrompt ? { id: Date.now(), prompt: diaryPrompt } : null);
+    setNavigateTo({ space: nextSpace, subtab, filter });
+  }, []);
+  const openReference = useCallback(item => {
+    if (!item?.id) return;
+    setReferenceRequest({ id: item.id, category: item.category });
+    navigate('collection', item.category === 'movie' || item.category === 'series' ? 'screen' : 'books');
+  }, [navigate]);
+  const clearReferenceRequest = useCallback(() => setReferenceRequest(null), []);
+  const openSearch = useCallback(() => {
+    setFocusSearchRequested(true);
+    if (space !== 'collection' && space !== 'journal') navigate('collection', 'books');
+  }, [navigate, space]);
+
+  useEffect(() => {
+    if (!focusSearchRequested || (space !== 'collection' && space !== 'journal')) return;
+    searchInputRef.current?.focus();
+    setFocusSearchRequested(false);
+  }, [focusSearchRequested, space]);
+
+  useEffect(() => {
+    const handleShortcut = event => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        openSearch();
+      }
+    };
+    window.addEventListener('keydown', handleShortcut);
+    return () => window.removeEventListener('keydown', handleShortcut);
+  }, [openSearch]);
+
+  useEffect(() => {
+    document.documentElement.dataset.reduceMotion = reduceMotion ? 'true' : 'false';
+  }, [reduceMotion]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('achilles:reduce-motion', String(reduceMotionSetting));
+    } catch {
+      setPreferenceError(true);
+    }
+  }, [reduceMotionSetting]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('achilles:ambient', String(ambientMode));
+    } catch {
+      setPreferenceError(true);
+    }
+  }, [ambientMode]);
 
   useEffect(() => {
     if (!whatsNewPreference.shouldShow) return undefined;
@@ -155,9 +267,10 @@ const AppContent = () => {
   // Theme Switcher
   const [theme, setTheme] = useState(themePreference.value);
   const changeTheme = useCallback(nextTheme => {
-    setTheme(nextTheme);
+    const valid = nextTheme === 'light' ? 'light' : 'dark';
+    setTheme(valid);
     try {
-      localStorage.setItem("achilles:theme", nextTheme);
+      localStorage.setItem("achilles:theme", valid);
     } catch {
       setPreferenceError(true);
     }
@@ -165,17 +278,15 @@ const AppContent = () => {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    document.documentElement.setAttribute("class", theme);
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) {
-      const colors = { ember: "#17110e", noir: "#0a0a0a", midnight: "#080f1d", sage: "#10150f", paper: "#f7f1e6" };
-      meta.setAttribute("content", colors[theme] || "#17110e");
+      meta.setAttribute("content", theme === "light" ? "#FFFFFF" : "#08090C");
     }
   }, [theme]);
 
-  const cycleTheme = () => {
-    const themes = ['ember', 'noir', 'midnight', 'sage', 'paper'];
-    const i = themes.indexOf(theme);
-    changeTheme(themes[(i + 1) % themes.length]);
+  const handleThemeToggle = () => {
+    changeTheme(theme === 'dark' ? 'light' : 'dark');
   };
 
   const handleExport = () => {
@@ -201,127 +312,168 @@ const AppContent = () => {
     reader.readAsText(file);
   };
 
-  if (!isDemo && authLoading) return <SplashScreen onComplete={completeSplash} />;
-  if (showSplash) return <SplashScreen onComplete={completeSplash} />;
-  if (!isDemo && !authUser) return <LockScreen />;
-  if (!cloudReady) return <Splash />;
-  const displayName = isDemo
-    ? 'Demo Reader'
-    : authUser.user_metadata?.full_name || authUser.email?.split('@')[0] || data.user || 'Reader';
+  const handleSyncRetry = async () => {
+    setSyncRetrying(true);
+    setSyncRetryError('');
+    try {
+      await syncNow();
+    } catch (error) {
+      setSyncRetryError(error?.message || 'Sync could not reconnect. Your changes remain saved locally.');
+    } finally {
+      setSyncRetrying(false);
+    }
+  };
 
+  if (!isDemo && authLoading) return <SplashScreen />;
+  if (!isDemo && !authUser) return <LockScreen />;
   const NAV = [
-    { id: "library", label: "Library", Icon: BookOpen },
-    { id: "entertainment", label: "Entertainment", Icon: Film },
-    { id: "personal", label: "Personal", Icon: Edit },
-    { id: "settings", label: "Settings", Icon: SettingsIcon }
+    { id: 'home', label: 'Olympus', active: space === 'home', onClick: () => navigate('home') },
+    { id: 'library', label: 'Athena', active: space === 'collection' && collectionTab === 'books', onClick: () => navigate('collection', 'books') },
+    { id: 'cinema', label: 'Apollo', active: space === 'collection' && collectionTab === 'screen', onClick: () => navigate('collection', 'screen') },
+    { id: 'journal', label: 'Mnemosyne', active: space === 'journal', onClick: () => navigate('journal') },
   ];
 
   return (
-    <div className="flex min-h-screen flex-col bg-ink text-white">
-      <header className="sticky top-0 z-30 border-b border-line bg-ink/95">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
-          <div className="flex items-center gap-2.5">
-            <button onClick={() => setSpace('home')} className="flex items-center gap-2.5">
-              <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent font-display text-lg font-black text-ink shadow-[0_10px_26px_-12px_#ff5500]">A</span>
-              <span className="font-display text-xl font-black tracking-tight">Achilis</span>
-            </button>
-            {isDemo && <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-accent">Demo Mode</span>}
-          </div>
-          
-          {space !== 'home' && space !== 'settings' && (
-            <div className="relative order-last w-full sm:order-none sm:ml-2 sm:w-auto sm:max-w-xs sm:flex-1">
-              <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-white/25" />
-              <input className="w-full rounded-full border border-transparent bg-surface pl-10 pr-4 py-2.5 text-sm text-white placeholder:text-muted/50 focus:border-accent/70 focus:outline-none" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search..." />
-            </div>
-          )}
+    <MotionPreferenceContext.Provider value={reduceMotion}>
+    <div className="app-shell flex flex-col overflow-hidden bg-ink text-text">
+      {/* Full-width Top Navigation Bar (HeaderNav) */}
+      <HeaderNav
+        space={space}
+        collectionTab={collectionTab}
+        onNavigate={navigate}
+        theme={theme}
+        onToggleTheme={handleThemeToggle}
+        userName={(data.user || authUser?.user_metadata?.full_name || 'Reader').split(/\s+/)[0]}
+        isDemo={isDemo}
+        onExitDemo={() => exitDemo(true)}
+        onSettings={() => navigate('settings')}
+      />
 
-          <nav className="ml-auto hidden items-center rounded-full border border-line bg-surface p-1 md:flex">
-            {NAV.map(({ id, label, Icon }) => (
-              <button key={id} onClick={() => { setSpace(id); setSearch(''); }} className={`flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold transition ${space === id ? 'bg-white text-ink shadow-sm' : 'text-muted hover:text-white'}`}>
-                <Icon className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{label}</span>
-              </button>
-            ))}
-          </nav>
-          
-          <div className="ml-auto flex items-center gap-2">
-            <button onClick={cycleTheme} className="grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-sm text-muted transition hover:border-accent/60 hover:text-accent" title="Cycle theme">◐</button>
-            <UserMenu onSettings={() => setSpace('settings')} />
-          </div>
-        </div>
-      </header>
-
-      {saveError && <div role="alert" className="border-b border-accent/30 bg-accent/10 px-4 py-2 text-center text-xs text-accent">Browser storage is unavailable or full — recent changes may not be saved.</div>}
-      {preferenceError && <div role="status" className="border-b border-accent/30 bg-accent/10 px-4 py-2 text-center text-xs text-accent">A preference could not be saved in this browser.</div>}
-
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 pb-32 pt-8 sm:px-6 sm:pb-20">
-        {space === 'home' && <Home onGo={setSpace} />}
-        {space === 'library' && <Library query={search} />}
-        {space === 'entertainment' && <Entertainment query={search} />}
-        {space === 'personal' && <Personal query={search} />}
-        {space === 'settings' && <Settings theme={theme} setTheme={changeTheme} onShowWhatsNew={() => setShowWhatsNew(true)} />}
-      </main>
-
-      <footer className="mt-auto border-t border-line bg-ink/80">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-3 px-4 py-4 text-xs text-muted sm:px-6">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-surface2 font-display text-xs font-bold text-white">{displayName.slice(0, 1).toUpperCase()}</span>
-            <span className="truncate font-medium text-white/80">{displayName}</span>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <button onClick={handleExport} className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 hover:bg-surface2"><Download className="h-3.5 w-3.5" /> Export</button>
-            <button onClick={() => fileRef.current?.click()} className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-1.5 hover:bg-surface2"><Upload className="h-3.5 w-3.5" /> Import</button>
-            <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={handleImport} />
-          </div>
-        </div>
-      </footer>
-
-      <nav
-        aria-label="Main navigation"
-        className="fixed bottom-4 left-1/2 z-50 flex w-[min(94vw,24rem)] -translate-x-1/2 items-center justify-around rounded-2xl border border-line bg-surface/90 p-1.5 shadow-2xl backdrop-blur-xl md:hidden"
-      >
-        {NAV.map(({ id, label, Icon }) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => { setSpace(id); setSearch(''); }}
-            aria-current={space === id ? 'page' : undefined}
-            className={`flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[10px] font-semibold transition ${space === id ? 'bg-accent text-ink' : 'text-muted hover:bg-white/[0.06] hover:text-white'}`}
-          >
-            <Icon className="h-4 w-4" />
-            <span>{label}</span>
+      {isDemo && (
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 px-4 py-2 text-center text-xs border-b border-line bg-surface/50">
+          <span className="text-muted">Demo Mode — Saved locally in your browser</span>
+          <button type="button" onClick={() => exitDemo(true)} className="min-h-11 font-semibold text-accent transition hover:underline">
+            Create Free Account →
           </button>
-        ))}
-      </nav>
+        </div>
+      )}
 
-      {/* FAB (Floating Action Button) */}
-      <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2 md:bottom-24 md:right-8">
-        {fab && (
-          <div className="pop-in flex flex-col items-end gap-2">
-            <button onClick={() => { setFab(false); setQuick({ kind: 'note' }); }} className="rounded-full border border-line bg-surface/95 px-4 py-2 text-xs font-semibold text-white shadow-xl transition hover:border-accent/60 hover:text-accent">Quick note</button>
-            <button onClick={() => { setFab(false); setQuick({ kind: 'diary' }); }} className="rounded-full border border-line bg-surface/95 px-4 py-2 text-xs font-semibold text-white shadow-xl transition hover:border-accent/60 hover:text-accent">Quick diary</button>
+      <main
+        className="main-content min-h-0 min-w-0 flex-1 overflow-y-auto px-4 pb-24 pt-4 md:px-8 md:pb-12"
+      >
+        {saveError && <div role="alert" className="mb-3 border-b border-line px-4 py-2 text-center text-xs text-muted">Browser storage is unavailable or full — recent changes may not be saved.</div>}
+        {preferenceError && <div role="status" className="mb-3 border-b border-line px-4 py-2 text-center text-xs text-muted">A preference could not be saved in this browser.</div>}
+        {cloudSyncStatus === 'offline' && (
+          <div role="status" className="mb-3 flex flex-wrap items-center justify-center gap-3 border-b border-line px-4 py-2 text-center text-xs text-muted">
+            <span>{syncRetryError || "Cloud sync is unavailable. Your changes remain saved locally and this app still works offline."}</span>
+            <Button variant="quiet" loading={syncRetrying} onClick={() => void handleSyncRetry()} className="min-h-11 px-3 py-1 text-xs">
+              Retry sync
+            </Button>
           </div>
         )}
-        <button onClick={() => setFab(!fab)} className="grid h-14 w-14 place-items-center rounded-full border border-accent/40 bg-accent text-2xl font-black text-ink shadow-[0_18px_40px_-16px_rgb(var(--c-accent))] transition hover:brightness-110">{fab ? "×" : "+"}</button>
-      </div>
 
-      {/* Quick Capture Modals */}
-      {quick?.kind === 'note' && <NoteEditor note={{ id: generateId(), title: "", content: "" }} onClose={() => setQuick(null)} onSave={n => {
-        update(state => ({ ...state, notes: [n, ...(state.notes || [])] }));
-        setQuick(null);
-      }} />}
-      
-      {quick?.kind === 'diary' && <DiaryEditor entry={{ id: generateId(), date: getToday(), title: "", content: "", mood: 3 }} onClose={() => setQuick(null)} onSave={d => {
-        update(state => {
-          const exists = state.diary.some(entry => entry.id === d.id);
-          return {
-            ...state,
-            diary: exists ? state.diary.map(entry => entry.id === d.id ? d : entry) : [d, ...state.diary]
-          };
-        });
-        setQuick(null);
-      }} />}
-      <Timer />
+        {(space === 'collection' || space === 'journal') && (
+          <div className={`relative mx-auto mb-6 w-full ${space === 'journal' ? 'max-w-3xl' : 'max-w-5xl'}`}>
+            <div className="relative w-full sm:w-64">
+              <Search className="pointer-events-none absolute left-0 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+              <input
+                ref={searchInputRef}
+                aria-label="Search this space"
+                type="search"
+                enterKeyHint="search"
+                className="w-full border-0 border-b border-line bg-transparent py-2 pl-7 pr-2 text-sm text-text placeholder:text-muted outline-none transition-colors focus:border-accent"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder="Search this space…"
+              />
+            </div>
+          </div>
+        )}
+
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={`${space}-${collectionTab}-${journalTab}`}
+            initial={reduceMotion ? false : { opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0, transition: { duration: reduceMotion ? 0.01 : 0.3, ease: 'easeInOut' } }}
+            exit={reduceMotion ? undefined : { opacity: 0, y: -10, transition: { duration: 0.3, ease: 'easeInOut' } }}
+          >
+            {!cloudReady ? (
+              space === 'collection'
+                ? collectionTab === 'books' ? <Library query={search} loading /> : <Entertainment query={search} loading />
+                  : <div className="flex min-h-[50vh] items-center justify-center"><Splash /></div>
+            ) : (
+              <>
+                {space === 'home' && <Home onGo={navigate} onAddBook={() => navigate('collection', 'books', true)} ambientMode={ambientMode} />}
+                {space === 'collection' && (
+                  <>
+                    <div className="mb-6 flex items-center gap-1 border-b border-line" role="tablist" aria-label="Collection">
+                      {[{ id: 'books', label: 'Books' }, { id: 'screen', label: 'Screen' }].map(tab => (
+                        <button key={tab.id} type="button" role="tab" aria-selected={collectionTab === tab.id} onClick={() => { setCollectionTab(tab.id); setRequestAddBook(false); setSearch(''); }} className={`border-b-2 px-4 py-3 text-sm font-semibold transition ${collectionTab === tab.id ? 'border-white text-white' : 'border-transparent text-muted hover:text-white'}`}>
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    {collectionTab === 'books'
+                      ? <Library
+                          query={search}
+                          openAddBook={requestAddBook}
+                          onAddBookHandled={() => setRequestAddBook(false)}
+                          referenceRequest={referenceRequest}
+                          onReferenceHandled={clearReferenceRequest}
+                          initialFilter={navigateTo?.filter}
+                        />
+                      : <Entertainment
+                          query={search}
+                          referenceRequest={referenceRequest}
+                          onReferenceHandled={clearReferenceRequest}
+                        />}
+                  </>
+                )}
+                {space === 'journal' && <Personal key={journalTab} query={search} initialTab={journalTab} entryPrompt={diaryPromptRequest} onOpenReference={openReference} />}
+                {space === 'settings' && (
+                  <Settings
+                    theme={theme}
+                    setTheme={changeTheme}
+                    reduceMotion={reduceMotionSetting}
+                    setReduceMotion={setReduceMotionSetting}
+                    ambientMode={ambientMode}
+                    setAmbientMode={setAmbientMode}
+                    onShowWhatsNew={() => setShowWhatsNew(true)}
+                    onExport={handleExport}
+                    onImport={() => fileRef.current?.click()}
+                    onImportFile={handleImport}
+                    importInputRef={fileRef}
+                  />
+                )}
+              </>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      {/* Hermes Quick Add Speed Dial */}
+      <QuickAddHermes
+        onAddBook={() => navigate('collection', 'books', true)}
+        onAddMovie={() => navigate('collection', 'screen')}
+        onAddJournal={() => navigate('journal', 'diary')}
+      />
+
+      <nav className="fixed inset-x-0 bottom-0 z-[35] flex justify-center bg-ink/90 backdrop-blur-md border-t border-line px-3 pb-[env(safe-area-inset-bottom)] pt-2 lg:hidden" aria-label="Primary">
+        <div className="flex max-w-full items-center justify-center gap-1 rounded-full bg-surface/90 px-2 py-1 shadow-xl backdrop-blur-sm border border-line">
+          {NAV.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={item.onClick}
+              aria-current={item.active ? 'page' : undefined}
+              className={`min-h-11 rounded-full px-3 text-xs font-medium transition-colors ${item.active ? 'text-accent font-semibold' : 'text-muted hover:text-text'}`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
       {showWhatsNew && <WhatsNew onClose={dontShowAgain => {
         setShowWhatsNew(false);
         if (dontShowAgain) {
@@ -332,12 +484,14 @@ const AppContent = () => {
           }
         }
       }} />}
-      {toastMessage && (
-        <div role="status" className="fixed bottom-6 left-1/2 z-[110] w-[min(90vw,32rem)] -translate-x-1/2 rounded-2xl border border-line bg-surface px-4 py-3 text-center text-sm text-white shadow-2xl">
-          {toastMessage}
-        </div>
-      )}
+      <Toast
+        message={undoToast?.message || toastMessage}
+        actionLabel={undoToast ? 'Undo' : undefined}
+        onAction={undoLatest}
+        onDismiss={dismissLatest}
+      />
     </div>
+    </MotionPreferenceContext.Provider>
   );
 };
 

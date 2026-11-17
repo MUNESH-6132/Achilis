@@ -19,23 +19,40 @@ function formatRuntime(value) {
   return hours ? (minutes ? `${hours}h ${minutes}m` : `${hours}h`) : `${minutes}m`;
 }
 
-function TitleListItem({ item, onOpen }) {
+function TitleListItem({ item, onOpen, selectMode, selected, onToggle }) {
   const progress = getEpisodeProgress(item);
+  const activate = () => {
+    if (selectMode) {
+      if (onToggle) onToggle(item.id);
+      return;
+    }
+    onOpen();
+  };
 
   return (
     <button
       type="button"
-      onClick={onOpen}
-      className="group flex w-full items-center gap-4 rounded-2xl border border-line bg-surface p-3 text-left transition hover:border-accent/40 hover:bg-surface2/60"
+      onClick={activate}
+      aria-pressed={selectMode ? Boolean(selected) : undefined}
+      aria-label={selectMode ? `${selected ? 'Deselect' : 'Select'} ${item.title || 'untitled'}` : undefined}
+      className="group flex w-full items-center gap-4 py-4 text-left transition"
     >
-      <span className="block h-[84px] w-14 shrink-0 overflow-hidden rounded-lg border border-line">
+      <span className="relative block h-[84px] w-14 shrink-0 overflow-hidden rounded-lg bg-surface2">
         <Cover book={{ ...item, author: item.creator }} />
+        {selectMode && (
+          <span
+            aria-hidden="true"
+            className={`absolute left-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-sm border-2 transition ${selected ? 'border-accent bg-accent text-ink' : 'border-line bg-ink/80 text-transparent'}`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="h-3 w-3"><path d="M20 6 9 17l-5-5" /></svg>
+          </span>
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex flex-wrap items-center gap-2">
           <span className="truncate font-display text-base font-bold">{item.title}</span>
-          <span className="rounded-full border border-line bg-surface2 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted">
-            {item.category === 'series' ? 'Series' : 'Movie'}
+          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted">
+            {item.category === 'series' ? 'Series' : item.category === 'movie' ? 'Movie' : 'Book'}
           </span>
         </span>
         <span className="mt-0.5 block truncate text-xs text-muted">
@@ -55,11 +72,18 @@ function TitleListItem({ item, onOpen }) {
   );
 }
 
-export function ListView({ items, onOpen }) {
+export function ListView({ items, onOpen, selectMode, selectedIds, onToggle }) {
   return (
-    <div className="space-y-2.5">
+    <div className="divide-y divide-line">
       {items.map(item => (
-        <TitleListItem key={item.id} item={item} onOpen={() => onOpen(item)} />
+        <TitleListItem
+          key={item.id}
+          item={item}
+          onOpen={() => onOpen(item)}
+          selectMode={selectMode}
+          selected={selectedIds ? selectedIds.has(item.id) : false}
+          onToggle={onToggle}
+        />
       ))}
     </div>
   );

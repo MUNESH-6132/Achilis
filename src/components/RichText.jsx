@@ -1,6 +1,7 @@
 import React from 'react';
+import { BookOpen, Film } from './Icons';
 
-export function RichText({ text, className }) {
+export function RichText({ text, className, references = [], onReference }) {
   const src = String(text == null ? "" : text);
   if (!src.trim()) return null;
   const lines = src.split(/\n/), out = [];
@@ -15,14 +16,40 @@ export function RichText({ text, className }) {
 
   const parseInline = (text, keyBase) => {
     const res = [];
-    const re = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|@[A-Za-z0-9_]+)/g;
+    const re = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|@\[[^\]\n]+\]|@[A-Za-z0-9_]+)/g;
     let last = 0, m, i = 0;
     while ((m = re.exec(text))) {
       if (m.index > last) res.push(text.slice(last, m.index));
       const tk = m[0];
       if (tk.startsWith("**")) res.push(<strong className="font-bold text-white" key={keyBase + "b" + i}>{tk.slice(2, -2)}</strong>);
       else if (tk.startsWith("`")) res.push(<code className="rounded bg-surface2 px-1 py-0.5 text-[0.9em]" key={keyBase + "c" + i}>{tk.slice(1, -1)}</code>);
-      else if (tk.startsWith("@")) res.push(<span className="font-semibold text-accent" key={keyBase + "m" + i}>{tk}</span>);
+      else if (tk.startsWith("@")) {
+        const title = tk.startsWith("@[") ? tk.slice(2, -1) : tk.slice(1);
+        const reference = references.find(item => String(item.title || '').trim().toLocaleLowerCase() === title.trim().toLocaleLowerCase());
+        const isScreenTitle = reference?.category === 'movie' || reference?.category === 'series';
+        const ReferenceIcon = isScreenTitle ? Film : BookOpen;
+        const referenceKind = reference?.category === 'series' ? 'series' : reference?.category === 'movie' ? 'film' : 'book';
+        const chipClass = 'inline-flex translate-y-0.5 items-center gap-1 rounded-full border px-2 py-0.5 align-baseline text-xs font-medium transition-colors hover:bg-white/5';
+        const chipStyle = { borderColor: 'rgb(var(--c-champagne) / .3)', color: 'rgb(var(--c-champagne))' };
+        res.push(reference && onReference ? (
+          <button
+            type="button"
+            key={keyBase + "m" + i}
+            onClick={() => onReference(reference)}
+            aria-label={`Open ${referenceKind}: ${reference.title}`}
+            className={chipClass}
+            style={chipStyle}
+          >
+            <ReferenceIcon className="h-3 w-3 shrink-0" />
+            {title}
+          </button>
+        ) : (
+          <span className={`${chipClass} cursor-default`} key={keyBase + "m" + i} style={chipStyle}>
+            <ReferenceIcon className="h-3 w-3 shrink-0" />
+            {title}
+          </span>
+        ));
+      }
       else res.push(<em className="italic" key={keyBase + "i" + i}>{tk.slice(1, -1)}</em>);
       last = m.index + tk.length;
       i++;

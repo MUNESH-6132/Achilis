@@ -2,6 +2,7 @@ import React from 'react';
 import { useAchilles } from '../context/AchillesContext';
 import { getTodayDateString, generateId } from '../utils/helpers';
 import { Plus } from './Icons';
+import { EmptyState } from './EmptyState';
 
 export function Trackers() {
   const { data, update } = useAchilles();
@@ -30,24 +31,32 @@ export function Trackers() {
     <div>
       <div className="mb-6 flex items-center justify-between">
         <div>
-          <h1 className="font-display text-3xl font-black">Trackers</h1>
+          <h1 className="font-display text-4xl font-bold tracking-tight">Today</h1>
           <p className="mt-1 text-xs text-muted">Daily habits</p>
         </div>
-        <button onClick={addTracker} className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-bold text-ink"><Plus className="h-4 w-4"/> Add Tracker</button>
+        {trackers.length > 0 && <button type="button" onClick={addTracker} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-bold text-black"><Plus className="h-4 w-4"/> Add habit</button>}
       </div>
-      <div className="space-y-3">
+      <div className="divide-y divide-white/5">
         {trackers.map(t => {
           const isDone = logs.some(l => l.trackerId === t.id && l.date === today);
           return (
-            <div key={t.id} onClick={() => toggleTracker(t.id)} className={`flex cursor-pointer items-center justify-between rounded-2xl border p-4 transition ${isDone ? 'border-accent/50 bg-accent/10' : 'border-line bg-surface hover:border-white/20'}`}>
+            <button type="button" key={t.id} onClick={() => toggleTracker(t.id)} aria-pressed={isDone} className="flex min-h-11 w-full items-center justify-between py-4 text-left transition hover:text-white">
               <span className="font-semibold text-white">{t.name}</span>
-              <div className={`grid h-6 w-6 place-items-center rounded-full border ${isDone ? 'bg-accent text-ink' : 'border-muted text-transparent'}`}>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="h-4 w-4"><path d="M20 6 9 17l-5-5" /></svg>
-              </div>
-            </div>
+              <span className="flex items-center gap-2 text-sm text-muted">
+                {isDone ? "Done" : "Mark done"}
+                {isDone && <span aria-hidden="true" className="text-white">✓</span>}
+              </span>
+            </button>
           );
         })}
-        {trackers.length === 0 && <p className="text-center py-10 text-muted">No trackers yet. Add one!</p>}
+        {trackers.length === 0 && (
+          <EmptyState
+            title="No habits to track"
+            description="Add a habit to start recording your daily progress."
+            actionLabel="Add a tracker"
+            onAction={addTracker}
+          />
+        )}
       </div>
     </div>
   );

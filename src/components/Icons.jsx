@@ -28,6 +28,10 @@ export const Upload = ({ className }) => <Icon className={className}><path d="M1
 export const Trash = ({ className }) => <Icon className={className}><path d="M4 7h16" /><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" /><path d="M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></Icon>;
 export const Flame = ({ className }) => <Icon className={className}><path d="M12 3s4.5 4.2 4.5 8a4.5 4.5 0 0 1-9 0c0-1.4.7-2.6.7-2.6S5.5 11 5.5 14a6.5 6.5 0 0 0 13 0c0-5.4-6.5-11-6.5-11Z" /></Icon>;
 export const Clock = ({ className }) => <Icon className={className}><circle cx="12" cy="13" r="8" /><path d="M12 9.5V13l2.5 1.5" /><path d="M9 2h6" /></Icon>;
+export const Pin = ({ className }) => <Icon className={className}><path d="m16 4 4 4-3 1-3 5-2 2-2-2 2-2-5-3-1-3 5 2 5-4Z" /><path d="m5 19 5-5" /></Icon>;
+export const SidebarToggle = ({ className }) => <Icon className={className}><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M9 4v16" /><path d="m15 9-3 3 3 3" /></Icon>;
+export const Palette = ({ className }) => <Icon className={className}><path d="M12 3a9 9 0 1 0 0 18h1.1a2.1 2.1 0 0 0 1.5-3.6 1.5 1.5 0 0 1 1-2.6H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z" /><circle cx="7.5" cy="12" r=".8" /><circle cx="10" cy="7.5" r=".8" /><circle cx="15" cy="7.5" r=".8" /></Icon>;
+export const LogOut = ({ className }) => <Icon className={className}><path d="M10 17l5-5-5-5M15 12H3" /><path d="M12 3h5a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-5" /></Icon>;
 export const Play = ({ className = "h-4 w-4" }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><path d="m8 5 11 7-11 7V5Z" fill="currentColor"/></svg>;
 export const Pause = ({ className = "h-4 w-4" }) => <svg viewBox="0 0 24 24" className={className} aria-hidden="true"><rect x="7" y="5" width="3.5" height="14" rx="1.2" fill="currentColor"/><rect x="13.5" y="5" width="3.5" height="14" rx="1.2" fill="currentColor"/></svg>;
 export const Check = ({ className }) => <Icon className={className}><path d="M20 6 9 17l-5-5" /></Icon>;

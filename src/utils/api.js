@@ -1,26 +1,85 @@
 const OPEN_LIBRARY = "https://openlibrary.org";
 const COVERS = "https://covers.openlibrary.org/b";
 const GOOGLE_BOOKS = "https://www.googleapis.com/books/v1/volumes";
+
+// Dual-layer cache to prevent hammering Open Library API and avoid 429 rate limits
+const openLibraryCache = new Map(); // in-memory Map
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function cacheLookup(url) {
+  // Check in-memory first
+  const memEntry = openLibraryCache.get(url);
+  if (memEntry) {
+    if (Date.now() - memEntry.timestamp < CACHE_TTL) {
+      return memEntry.data;
+    } else {
+      openLibraryCache.delete(url);
+    }
+  }
+  // Check sessionStorage as secondary cache
+  try {
+    const se = sessionStorage.getItem(`ol_cache_${url}`);
+    if (se) {
+      const entry = JSON.parse(se);
+      if (Date.now() - entry.timestamp < CACHE_TTL) {
+        openLibraryCache.set(url, { data: entry.data, timestamp: entry.timestamp });
+        return entry.data;
+      } else {
+        sessionStorage.removeItem(`ol_cache_${url}`);
+      }
+    }
+  } catch {}
+  return null;
+}
+
+function cacheStore(url, data) {
+  const entry = { data, timestamp: Date.now() };
+  openLibraryCache.set(url, entry);
+  try {
+    sessionStorage.setItem(`ol_cache_${url}`, JSON.stringify(entry));
+  } catch {}
+}
+
+// --- BOOKS (Open Library) ---
+export async function searchOpenLibrary(query) {
+  const url = `${OPEN_LIBRARY}/search.json?limit=6&fields=title,author_name,first_publish_year,cover_i&q=${encodeURIComponent(query)}`;
+  
+  // Check cache first
+  const cached = cacheLookup(url);
+  if (cached !== null) return cached;
+  
+  const data = await fetchJson(url);
+  const docs = Array.isArray(data.docs) ? data.docs : [];
+  
+  // Cache the result
+  cacheStore(url, docs);
+  
+  return docs;
+}
 const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY?.trim() || "";
 
 async function fetchJson(url, options = {}) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 9000);
+  const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal, headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`Request failed (${res.status})`);
+    const res = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        ...options.headers,
+      },
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Request failed (${res.status}): ${text.slice(0, 120)}`);
+    }
     return await res.json();
   } finally {
     clearTimeout(timeout);
   }
 }
 
-// --- BOOKS (Open Library) ---
-export async function searchOpenLibrary(query) {
-  const url = `${OPEN_LIBRARY}/search.json?limit=6&fields=title,subtitle,author_name,first_publish_year,cover_i,subject,publisher,number_of_pages_median&q=${encodeURIComponent(query)}`;
-  const data = await fetchJson(url);
-  return Array.isArray(data.docs) ? data.docs : [];
-}
 
 export async function fetchCover(book) {
   const title = String(book.englishTitle || book.title || "").split(":")[0].trim();

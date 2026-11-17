@@ -37,6 +37,17 @@ export function sanitizeState(input) {
       )],
     }));
 
+  const oracleAnswers = source.oracleAnswers && typeof source.oracleAnswers === 'object' && !Array.isArray(source.oracleAnswers)
+    ? source.oracleAnswers
+    : {};
+
+  const oraclePinned = Array.isArray(source.oraclePinned)
+    ? source.oraclePinned.filter(Boolean).map(String)
+    : [];
+
+  const oracleCustom = (Array.isArray(source.oracleCustom) ? source.oracleCustom : [])
+    .filter(q => q && typeof q === 'object' && q.question);
+
   return {
     ...defaultState,
     ...source,
@@ -45,5 +56,8 @@ export function sanitizeState(input) {
     notes,
     shelves,
     timer: { ...defaultState.timer, ...(source.timer || {}) },
+    oracleAnswers,
+    oraclePinned,
+    oracleCustom,
   };
 }

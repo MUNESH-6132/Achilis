@@ -5,12 +5,14 @@ import { Cover } from './Cover';
 import { X, Play as Film, Plus, Check, Trash } from './Icons';
 import { generateId, parseTags } from '../utils/helpers';
 import { fetchPoster, imdbSuggest, tmdbDetails } from '../utils/api';
+import { useUndoToast } from '../ui/useUndoToast';
+import { ErrorState } from '../ui/Primitives';
 
 const BUTTON_BASE = "inline-flex items-center justify-center gap-2 rounded-full text-sm font-semibold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40";
-const BUTTON_PRIMARY = `${BUTTON_BASE} bg-accent px-4 py-2.5 text-ink hover:bg-[#ff6a1f] hover:shadow-[0_12px_30px_-12px_#ff5500] active:scale-[.98]`;
-const BUTTON_SECONDARY = `${BUTTON_BASE} border border-line px-4 py-2.5 text-white/80 hover:border-accent/60 hover:bg-white/[0.04] hover:text-white active:scale-[.98]`;
-const BUTTON_SUBTLE = `${BUTTON_BASE} bg-surface2 px-3.5 py-2 text-white/70 hover:bg-[#2a2a2a] hover:text-white`;
-const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-accent/70 focus:outline-none";
+const BUTTON_PRIMARY = `${BUTTON_BASE} bg-accent px-4 py-2.5 text-ink hover:bg-accent/90 active:scale-[.98]`;
+const BUTTON_SECONDARY = `${BUTTON_BASE} border border-line px-4 py-2.5 text-text/80 hover:border-accent/60 hover:bg-surface2 hover:text-text active:scale-[.98]`;
+const BUTTON_SUBTLE = `${BUTTON_BASE} bg-surface2 px-3.5 py-2 text-text/70 hover:bg-surface hover:text-text`;
+const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink px-4 py-2.5 text-sm text-text placeholder:text-muted/60 focus:border-accent/70 focus:outline-none";
 const STATUS_OPTIONS = ["Watched", "In progress", "Watchlist"];
 
 function Field({ label, children }) {
@@ -81,7 +83,7 @@ function SeasonEditor({ season, index, onChange, onRemove }) {
   };
 
   return (
-    <div className="rounded-2xl border border-line bg-ink/40 p-4">
+    <div className="border-b border-line py-4">
       <div className="flex items-center gap-2">
         <input
           className={`${INPUT_CLASS} py-1.5 text-sm`}
@@ -106,12 +108,13 @@ function SeasonEditor({ season, index, onChange, onRemove }) {
       )}
       <div className="mt-2 max-h-48 space-y-1 overflow-y-auto pr-1">
         {episodes.map(episode => (
-          <div key={episode.id} className="group flex items-center gap-2 rounded-lg px-1 py-1 transition hover:bg-white/[0.04]">
+          <div key={episode.id} className="group flex items-center gap-2 rounded-lg px-1 py-1 transition hover:bg-surface2">
             <button
               type="button"
               onClick={() => onChange({ episodes: episodes.map(item => item.id === episode.id ? { ...item, done: !item.done } : item) })}
-              aria-label={episode.done ? "Mark unwatched" : "Mark watched"}
-              className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition ${episode.done ? "border-accent bg-accent text-ink" : "border-line text-transparent hover:border-accent/60"}`}
+              aria-label={`${episode.done ? "Mark unwatched" : "Mark watched"}: ${episode.title}`}
+              aria-pressed={episode.done}
+              className={`grid h-11 w-11 shrink-0 place-items-center rounded-md border transition ${episode.done ? "border-accent bg-accent text-ink" : "border-line text-transparent hover:border-accent/60"}`}
             >
               <Check className="h-3 w-3" />
             </button>
@@ -121,8 +124,8 @@ function SeasonEditor({ season, index, onChange, onRemove }) {
             <button
               type="button"
               onClick={() => onChange({ episodes: episodes.filter(item => item.id !== episode.id) })}
-              className="text-muted opacity-0 transition hover:text-accent group-hover:opacity-100"
-              aria-label="Remove episode"
+              className="grid h-11 w-11 place-items-center text-muted transition hover:text-accent md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+              aria-label={`Remove ${episode.title}`}
             >
               <X className="h-3.5 w-3.5" />
             </button>
@@ -169,7 +172,8 @@ function RatingInput({ value = 0, onChange, className = "" }) {
 }
 
 export function TitleEditor({ title, item = title, onClose, onSave }) {
-  const { data, update } = useAchilles();
+  const { data, notify, update } = useAchilles();
+  const stageDelete = useUndoToast();
   const [form, setForm] = useState(() => ({
     category: "movie",
     status: "Watchlist",
@@ -184,6 +188,12 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
   const [suggestions, setSuggestions] = useState([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [detailsRetry, setDetailsRetry] = useState(false);
+  const [selectedSuggestion, setSelectedSuggestion] = useState(null);
+  const searchRequestRef = useRef(0);
   const searchTimeout = useRef(null);
   const searchWrapper = useRef(null);
   const posterInput = useRef(null);
@@ -208,25 +218,47 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
   const addSeason = () => setField("seasons", [...seasons, createSeason(seasons.length + 1)]);
   const removeSeason = id => setField("seasons", seasons.filter(season => season.id !== id));
 
+  const searchTitles = async query => {
+    const requestId = ++searchRequestRef.current;
+    setSearching(true);
+    setSearchError("");
+    try {
+      const results = await imdbSuggest(query);
+      if (requestId !== searchRequestRef.current) return;
+      setSuggestions(results);
+    } catch {
+      if (requestId !== searchRequestRef.current) return;
+      setSuggestions([]);
+      setSearchError("Could not search movie and series titles. Check your connection or enter the title manually.");
+    } finally {
+      if (requestId === searchRequestRef.current) setSearching(false);
+    }
+  };
+
   const handleTitleChange = event => {
     const query = event.target.value;
     setField("title", query);
+    setSearchTerm(query);
     setMessage("");
+    setSearchError("");
+    setDetailsRetry(false);
     clearTimeout(searchTimeout.current);
     if (query.trim().length < 2) {
+      searchRequestRef.current += 1;
       setSuggestions([]);
+      setSearching(false);
       return;
     }
-    searchTimeout.current = setTimeout(async () => {
-      try {
-        setSuggestions(await imdbSuggest(query));
-      } catch {
-        setSuggestions([]);
-      }
-    }, 350);
+    searchTimeout.current = setTimeout(() => void searchTitles(query), 350);
   };
 
   const selectSuggestion = async suggestion => {
+    searchRequestRef.current += 1;
+    setSearching(false);
+    setSelectedSuggestion(suggestion);
+    setDetailsRetry(false);
+    setSearchError("");
+    setSearchTerm("");
     setForm(previous => ({
       ...previous,
       title: suggestion.l,
@@ -264,7 +296,8 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
       }));
       setMessage("Filled from TMDB.");
     } catch {
-      setMessage("Filled the basics from TMDB. Other details were not available.");
+      setMessage("Basic details were filled, but TMDB details were unavailable.");
+      setDetailsRetry(true);
     }
   };
 
@@ -330,43 +363,47 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
           : [savedTitle, ...state.books]
       }));
     }
+    notify(data.books.some(book => book.id === savedTitle.id) ? "Changes saved." : "Title added.");
     onClose();
   };
 
   const handleDelete = () => {
-    if (!window.confirm(`Delete "${item.title || "this title"}"?`)) return;
-    update(state => ({
-      ...state,
-      books: state.books.filter(book => book.id !== item.id),
-      shelves: (Array.isArray(state.shelves) ? state.shelves : []).map(shelf => ({
-        ...shelf,
-        titleIds: (shelf.titleIds || []).filter(id => id !== item.id)
-      }))
-    }));
+    stageDelete({
+      key: `title:${item.id}`,
+      message: `Deleted ${item.title || 'title'}.`,
+      commit: () => update(state => ({
+        ...state,
+        books: state.books.filter(book => book.id !== item.id),
+        shelves: (Array.isArray(state.shelves) ? state.shelves : []).map(shelf => ({
+          ...shelf,
+          titleIds: (shelf.titleIds || []).filter(id => id !== item.id)
+        }))
+      })),
+    });
     onClose();
   };
 
   const handleClose = () => {
-    if (JSON.stringify(form) !== initialForm.current && !window.confirm("Close without saving these details?")) return;
+    if (JSON.stringify(form) !== initialForm.current && !window.confirm("Close without saving these details?")) return false;
     onClose();
   };
 
   return (
-    <Modal onClose={handleClose} width="max-w-3xl">
+    <Modal onClose={handleClose} width="max-w-3xl" title={item.id ? "Title details" : "Add a title"} mobileSheet>
       <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-5">
         <div className="flex items-center gap-3">
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent/15 text-accent">
             <Film className="h-4 w-4" />
           </span>
           <div>
-            <h2 className="font-display text-xl font-black leading-tight">{item.id && data.books.some(book => book.id === item.id) ? "Title details" : "Add a title"}</h2>
+            <h2 className="font-display text-xl font-bold tracking-tight">{item.id && data.books.some(book => book.id === item.id) ? "Title details" : "Add a title"}</h2>
             <p className="text-xs text-muted">
               {episodes.length ? `${watchedEpisodes}/${episodes.length} episodes · ` : ""}
               {item.id && data.books.some(book => book.id === item.id) ? "Saved in Entertainment" : "A film or a series, with its own poster and progress."}
             </p>
           </div>
         </div>
-        <button type="button" onClick={handleClose} aria-label="Close" className="grid h-9 w-9 place-items-center rounded-full text-muted transition hover:bg-surface2 hover:text-white">
+        <button type="button" onClick={handleClose} aria-label="Close title editor" className="grid h-11 w-11 place-items-center rounded-full text-muted transition hover:bg-surface2 hover:text-white">
           <X className="h-4 w-4" />
         </button>
       </div>
@@ -374,7 +411,7 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
       <div className="space-y-6 p-6">
         <div className="grid gap-6 sm:grid-cols-[132px_1fr]">
           <div>
-            <div className="aspect-[2/3] overflow-hidden rounded-2xl border border-line">
+            <div className="aspect-[2/3] overflow-hidden rounded-2xl">
               <Cover book={{ ...form, author: form.creator }} />
             </div>
             <input ref={posterInput} type="file" accept="image/*" className="hidden" onChange={handlePosterUpload} />
@@ -382,7 +419,8 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
               Upload poster
             </button>
             <button type="button" onClick={handlePosterLookup} disabled={busy} className={`${BUTTON_SUBTLE} mt-1.5 w-full text-xs`}>
-              {busy ? "Working…" : "Fetch poster"}
+              Fetch poster
+              {busy && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />}
             </button>
           </div>
 
@@ -390,16 +428,23 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
             <Field label="Title">
               <div ref={searchWrapper} style={{ position: "relative" }}>
                 <input
+                  type="search"
                   className={INPUT_CLASS}
                   value={form.title}
                   onChange={handleTitleChange}
                   placeholder="Type a movie or series name"
                   autoFocus
                   autoComplete="off"
+                  enterKeyHint="search"
                 />
+                {searching && <p role="status" className="mt-2 text-xs text-muted">Searching movie and series titles…</p>}
+                {searchError && <div className="mt-2"><ErrorState message={searchError} onRetry={() => void searchTitles(form.title)} /></div>}
+                {!searching && !searchError && searchTerm.trim().length >= 2 && suggestions.length === 0 && (
+                  <p role="status" className="mt-2 text-xs text-muted">No match found. Continue adding this title manually.</p>
+                )}
                 {suggestions.length > 0 && (
                   <div
-                    className="rounded-2xl border border-line bg-surface2 shadow-2xl"
+                    className="rounded-2xl border border-line bg-surface2"
                     style={{ position: "absolute", zIndex: 30, left: 0, right: 0, top: "100%", marginTop: 4, maxHeight: 300, overflowY: "auto" }}
                   >
                     {suggestions.map(suggestion => (
@@ -510,7 +555,7 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
         </Field>
 
         {form.category === "series" && (
-          <section className="rounded-3xl border border-line bg-ink/40 p-5">
+          <section className="border-t border-line pt-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h3 className="font-display text-base font-bold">Seasons and episodes</h3>
@@ -529,7 +574,7 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
             )}
             <div className="mt-4 space-y-3">
               {seasons.length === 0 ? (
-                <p className="rounded-2xl border border-dashed border-line px-4 py-6 text-center text-xs text-muted">
+                <p className="py-3 text-xs text-muted">
                   No seasons yet. Add one to start a checklist.
                 </p>
               ) : (
@@ -547,7 +592,14 @@ export function TitleEditor({ title, item = title, onClose, onSave }) {
           </section>
         )}
 
-        {message && <p className="rounded-2xl border border-accent/25 bg-accent/[0.08] px-4 py-2.5 text-xs text-accent">{message}</p>}
+        {message && (
+          <p role="status" className="text-xs text-accent">
+            {message}
+            {detailsRetry && selectedSuggestion && (
+              <button type="button" onClick={() => void selectSuggestion(selectedSuggestion)} className="ml-2 min-h-11 px-2 font-semibold underline">Retry details</button>
+            )}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-line px-6 py-4">

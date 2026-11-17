@@ -1,38 +1,97 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAchilles } from '../context/AchillesContext';
-import { Modal } from './Modal';
 import { Cover } from './Cover';
 import { Stars } from './Stars';
-import { StatusPill } from './StatusPill';
-import { BookOpen, X, Plus, Check, Edit } from './Icons';
+import { X, Plus, Check, Edit } from './Icons';
 import { generateId } from '../utils/helpers';
 import { fetchChapters } from '../utils/api';
+import { ErrorState } from '../ui/Primitives';
+import { useReduceMotion } from '../ui/motion';
 
-const MILESTONES = [25, 50, 75, 100];
-const BTN_PRIMARY = "inline-flex items-center justify-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/15";
-const BTN_ACCENT = "inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-bold text-ink transition hover:bg-accent/90";
-const INPUT_CLASS = "w-full rounded-xl border border-line bg-ink/50 px-4 py-2.5 text-sm text-white placeholder:text-white/25 focus:border-accent/70 focus:outline-none";
+const BTN_OUTLINE = "inline-flex items-center justify-center gap-2 border border-line text-text rounded-full px-4 py-2 hover:bg-surface2 transition text-xs font-semibold";
+const CHAPTER_INPUT_CLASS = "w-full bg-transparent border-b border-line focus:border-accent py-2 text-text placeholder:text-muted/50 focus:outline-none transition-colors appearance-none";
 
 export function BookDetails({ book, onClose, onEdit }) {
   const { data, update } = useAchilles();
+  const reduceMotion = useReduceMotion();
   const currentBook = data.books.find(b => b.id === book.id) || book;
   const chapters = Array.isArray(currentBook.chapters) ? currentBook.chapters : [];
-  
+
   const completedCount = chapters.filter(c => c.done).length;
   const totalCount = chapters.length;
-  const progress = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
-  const nextMilestone = MILESTONES.find(m => m > progress) || 100;
+  const totalPages = Number(currentBook.pages) || 0;
+  const currentPage = Number(currentBook.currentPage) || 0;
+  const chapterProgress = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
+  const pageProgress = totalPages ? Math.min(100, Math.round((currentPage / totalPages) * 100)) : 0;
+  const progress = totalCount ? chapterProgress : pageProgress;
+  const progressLabel = totalCount
+    ? `${completedCount} of ${totalCount} sections done`
+    : totalPages
+      ? `Page ${currentPage} of ${totalPages}`
+      : "Add sections or a page count to track this read.";
+
+  const status = currentBook.status || "Watchlist";
+  const isReading = status === "Currently Reading";
+  const isComplete = status === "Read";
 
   const [fetching, setFetching] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
   const [message, setMessage] = useState("");
   const [newChapterTitle, setNewChapterTitle] = useState("");
   const [generateCount, setGenerateCount] = useState("12");
+  const [review, setReview] = useState(currentBook.review || "");
 
-  const updateChapters = (newChapters) => {
+  const [visible, setVisible] = useState(true);
+  const closingRef = useRef(false);
+  const closeTimerRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const closeButtonRef = useRef(null);
+
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  useEffect(() => {
+    setReview(currentBook.review || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentBook.id]);
+
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setVisible(false);
+    closeTimerRef.current = setTimeout(() => {
+      onCloseRef.current?.();
+    }, reduceMotion ? 0 : 260);
+  }, [reduceMotion]);
+
+  useEffect(() => () => clearTimeout(closeTimerRef.current), []);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        requestClose();
+      }
+    };
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    closeButtonRef.current?.focus();
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [requestClose]);
+
+  const updateBook = (patch) => {
     update(state => ({
       ...state,
-      books: state.books.map(b => b.id === currentBook.id ? { ...b, chapters: newChapters } : b)
+      books: state.books.map(b => b.id === currentBook.id ? { ...b, ...patch } : b)
     }));
+  };
+
+  const updateChapters = (newChapters) => {
+    updateBook({ chapters: newChapters });
   };
 
   const toggleChapter = (id) => {
@@ -65,6 +124,7 @@ export function BookDetails({ book, onClose, onEdit }) {
 
   const fetchOnlineChapters = async () => {
     setFetching(true);
+    setFetchError(false);
     setMessage("");
     try {
       const { chapters: fetched, source } = await fetchChapters(currentBook);
@@ -72,7 +132,7 @@ export function BookDetails({ book, onClose, onEdit }) {
       const newChapters = fetched
         .map(c => ({ ...c, id: generateId(), done: false }))
         .filter(c => !existingTitles.has(c.title.toLowerCase()));
-        
+
       if (newChapters.length) {
         updateChapters([...chapters, ...newChapters]);
         setMessage(`Added ${newChapters.length} chapters from ${source}.`);
@@ -80,132 +140,251 @@ export function BookDetails({ book, onClose, onEdit }) {
         setMessage("Those chapters are already listed.");
       }
     } catch {
-      setMessage("No table of contents found online. Generate or add them by hand.");
+      setFetchError(true);
     } finally {
       setFetching(false);
     }
   };
 
-  const metaParts = [currentBook.publisher, currentBook.published, Number(currentBook.pages) ? `${currentBook.pages} pages` : ""].filter(Boolean);
+  const handleReviewChange = (event) => {
+    const value = event.target.value;
+    setReview(value);
+    updateBook({ review: value });
+  };
+
+  const metaRows = [
+    { label: 'Author', value: currentBook.author || currentBook.creator || '—' },
+    { label: 'Publisher', value: currentBook.publisher || '—' },
+    { label: 'Published', value: currentBook.published || (currentBook.year ? String(currentBook.year) : '—') },
+    { label: 'Genres', value: Array.isArray(currentBook.tags) ? currentBook.tags.join(', ') : (currentBook.genres || '—') },
+  ];
 
   return (
-    <Modal onClose={onClose} width="max-w-3xl">
-      <div className="flex items-center justify-between gap-3 border-b border-line px-6 py-5">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-accent/15 text-accent">
-            <BookOpen className="h-4 w-4" />
-          </span>
-          <div className="min-w-0">
-            <h2 className="truncate font-display text-xl font-black leading-tight">{currentBook.title || "Untitled"}</h2>
-            <p className="truncate text-xs text-muted">{currentBook.author || currentBook.creator || (currentBook.year ? String(currentBook.year) : "Unknown")}</p>
-          </div>
-        </div>
-        <button onClick={onClose} className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted transition hover:bg-surface2 hover:text-white">
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-
-      <div className="space-y-6 p-6">
-        <div className="grid gap-6 sm:grid-cols-[150px_1fr]">
-          <div>
-            <div className="aspect-[2/3] overflow-hidden rounded-2xl border border-line">
-              <Cover book={currentBook} />
-            </div>
-          </div>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <StatusPill status={currentBook.status || "Watchlist"} />
-              <Stars value={currentBook.rating || 0} className="text-sm" />
-            </div>
-            {metaParts.length ? (
-              <p className="mt-3 text-xs text-muted">{metaParts.join(" · ")}</p>
-            ) : (
-              <p className="mt-3 text-xs text-muted">Publisher and page count are not set.</p>
-            )}
-            <p className="mt-3 text-sm leading-relaxed text-white/70">
-              {currentBook.description || "No description yet. Use Edit book to fetch details online or write your own."}
-            </p>
-          </div>
-        </div>
-
-        <section className="rounded-3xl border border-line bg-ink/40 p-5">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h3 className="font-display text-base font-bold">Reading progress</h3>
-              <p className="text-xs text-muted">{totalCount ? `${completedCount} of ${totalCount} chapters complete · ${progress}%` : "Add chapters below to start tracking."}</p>
-            </div>
-            <span className="text-[11px] tabular-nums text-muted">{Number(currentBook.pages) ? `${currentBook.pages} pages` : "No page count"}</span>
-          </div>
-          <div className="relative mt-4">
-            <div className="h-2.5 overflow-hidden rounded-full bg-surface2">
-              <div className="h-full rounded-full bg-accent transition-[width] duration-700 ease-out" style={{ width: `${progress}%` }} />
-            </div>
-            {[25, 50, 75].map(p => (
-              <span key={p} className="absolute top-0 h-2.5 w-px bg-ink" style={{ left: `${p}%` }} />
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {MILESTONES.map(m => (
-              <span key={m} className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold tabular-nums transition ${progress >= m ? "border-accent/50 bg-accent/15 text-accent" : "border-line text-muted"}`}>
-                {m}%
-              </span>
-            ))}
-            <span className="ml-auto text-[11px] text-muted">{progress >= 100 ? "Finished" : `Next milestone ${nextMilestone}%`}</span>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-line bg-ink/40 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <div>
-              <h3 className="font-display text-base font-bold">Chapters and sections</h3>
-              <p className="text-xs text-muted">{totalCount ? "Tick one as you finish it." : "Generate a list, fetch it online, or add your own."}</p>
-            </div>
-            <button onClick={fetchOnlineChapters} disabled={fetching} className={BTN_PRIMARY}>
-              {fetching ? "Fetching…" : "Fetch online"}
-            </button>
-          </div>
-
-          {totalCount === 0 ? (
-            <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-dashed border-line p-4">
-              <div className="w-28">
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted mb-1.5">How many sections</label>
-                <input type="number" min="1" max="40" value={generateCount} onChange={e => setGenerateCount(e.target.value)} className={INPUT_CLASS} />
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          key="book-drawer"
+          className="fixed inset-0 z-[70] flex justify-end"
+          initial={reduceMotion ? false : { opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: reduceMotion ? 0.01 : 0.2, ease: "easeOut" }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={currentBook.title || "Book details"}
+        >
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            onMouseDown={requestClose}
+          />
+          <motion.div
+            initial={reduceMotion ? false : { x: "4%", opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={reduceMotion ? { opacity: 0 } : { x: "4%", opacity: 0 }}
+            transition={{ duration: reduceMotion ? 0.01 : 0.28, ease: [0.16, 1, 0.3, 1] }}
+            className="relative h-full w-full max-w-5xl overflow-y-auto border-l border-line bg-ink shadow-2xl"
+          >
+            <div className="mx-auto w-full max-w-5xl px-6 py-8 sm:px-10 sm:py-10">
+              <div className="flex items-start justify-between gap-4">
+                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-accent">
+                  Book {currentBook.year ? `· ${currentBook.year}` : ''} {totalPages ? `· ${totalPages} pages` : ''}
+                </p>
+                <button
+                  ref={closeButtonRef}
+                  type="button"
+                  onClick={requestClose}
+                  aria-label="Close details"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line text-muted transition hover:border-accent/50 hover:text-accent"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button onClick={generateChapters} className={BTN_PRIMARY}>Generate sections</button>
-            </div>
-          ) : (
-            <div className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
-              {chapters.map(chapter => (
-                <div key={chapter.id} className="group flex items-center gap-3 rounded-xl border border-transparent bg-surface2 px-3 py-2 transition hover:border-line" style={{ marginLeft: `${(chapter.depth || 0) * 12}px` }}>
-                  <button onClick={() => toggleChapter(chapter.id)} className={`grid h-5 w-5 shrink-0 place-items-center rounded-md border transition ${chapter.done ? "border-accent bg-accent text-ink" : "border-line text-transparent hover:border-accent/60"}`}>
-                    <Check className="h-3 w-3" />
-                  </button>
-                  <span className={`flex-1 text-sm leading-snug ${chapter.done ? "text-muted line-through" : "text-white/90"}`}>{chapter.title}</span>
-                  <button onClick={() => removeChapter(chapter.id)} className="text-muted opacity-0 transition hover:text-accent group-hover:opacity-100">
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+
+              <div className="mt-6 grid grid-cols-1 gap-10 md:grid-cols-[280px_1fr] md:gap-12">
+                <div>
+                  <div className="relative">
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute -inset-8 rounded-full opacity-70"
+                      style={{
+                        background: "radial-gradient(circle at 50% 45%, rgb(var(--c-accent) / 0.30), transparent 70%)",
+                        filter: "blur(32px)",
+                      }}
+                    />
+                    <div className="relative aspect-[2/3] overflow-hidden rounded-xl border border-line shadow-2xl">
+                      <Cover book={currentBook} />
+                    </div>
+                  </div>
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={requestClose}
+                      className="flex-1 rounded-md border border-line px-4 py-2 text-sm font-semibold text-text transition hover:bg-surface2"
+                    >
+                      Close
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onEdit(currentBook)}
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-md bg-accent px-4 py-2 text-sm font-semibold text-ink transition hover:bg-accent/90"
+                    >
+                      <Edit className="h-4 w-4" /> Edit
+                    </button>
+                  </div>
                 </div>
-              ))}
+
+                <div className="min-w-0">
+                  <div className="relative inline-flex items-center">
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none absolute left-3 h-1.5 w-1.5 rounded-full ${isReading || isComplete ? 'bg-accent' : 'bg-muted'}`}
+                    />
+                    <select
+                      value={status}
+                      onChange={event => updateBook({ status: event.target.value })}
+                      aria-label="Reading status"
+                      className={`cursor-pointer appearance-none rounded-full border py-1 pl-6 pr-7 text-[10px] font-semibold uppercase tracking-widest outline-none transition ${isReading
+                        ? 'border-accent/40 bg-accent/10 text-accent'
+                        : isComplete
+                          ? 'border-accent/25 bg-accent/5 text-accent'
+                          : 'border-line bg-surface text-muted'}`}
+                    >
+                      <option value="Watchlist">Want to Read</option>
+                      <option value="Currently Reading">Currently Reading</option>
+                      <option value="Read">Read</option>
+                    </select>
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className="pointer-events-none absolute right-2.5 h-3 w-3 opacity-60"
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </div>
+
+                  <h1 className="mt-4 break-words font-display text-4xl font-bold tracking-tight text-text sm:text-5xl">
+                    {currentBook.title || "Untitled"}
+                  </h1>
+                  <p className="mt-3 font-serif text-lg text-muted">
+                    {currentBook.author || currentBook.creator || "Unknown author"}
+                  </p>
+
+                  <div className="mt-5 flex flex-wrap items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Stars value={currentBook.rating || 0} onChange={value => updateBook({ rating: value })} className="text-lg" />
+                      <span className="text-xs text-muted">{currentBook.rating ? `${currentBook.rating}/5` : "Not rated"}</span>
+                    </div>
+                  </div>
+
+                  <section className="mt-8">
+                    <div className="flex items-end justify-between">
+                      <p className="text-[10px] font-mono uppercase tracking-widest text-muted">Reading progress</p>
+                      <span className="font-display text-2xl font-bold text-accent">{progress}%</span>
+                    </div>
+                    <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-line">
+                      <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${progress}%` }} />
+                    </div>
+                    <p className="mt-2 text-xs text-muted">{progressLabel}</p>
+                  </section>
+
+                  <section className="mt-8">
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-muted">Context</p>
+                    <p className="mt-2 font-serif text-base leading-relaxed text-text">
+                      {currentBook.description || "No description available."}
+                    </p>
+                  </section>
+
+                  {currentBook.quote && (
+                    <section className="mt-8">
+                      <p className="text-[10px] font-mono uppercase tracking-widest text-muted">Quote</p>
+                      <p className="mt-2 font-serif text-xl italic leading-relaxed text-accent">
+                        “{currentBook.quote}”
+                      </p>
+                    </section>
+                  )}
+
+                  <section className="mt-8">
+                    <label htmlFor="book-review" className="text-[10px] font-mono uppercase tracking-widest text-muted">Personal notes</label>
+                    <textarea
+                      id="book-review"
+                      value={review}
+                      onChange={handleReviewChange}
+                      rows={4}
+                      placeholder="Your thoughts, reflections, favorite lines…"
+                      className="mt-2 w-full resize-y rounded-lg border border-line bg-surface/50 p-4 font-serif text-base leading-relaxed text-text placeholder:text-muted/50 outline-none transition focus:border-accent"
+                    />
+                  </section>
+
+                  <section className="mt-8 border-t border-line">
+                    {metaRows.map((row, index) => (
+                      <div key={index} className="flex border-b border-line py-3">
+                        <span className="w-32 shrink-0 text-[10px] font-mono uppercase tracking-widest text-muted">{row.label}</span>
+                        <span className="text-sm font-medium text-text">{row.value}</span>
+                      </div>
+                    ))}
+                  </section>
+
+                  <section className="mt-8">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-4">
+                      <div>
+                        <p className="text-[10px] font-mono uppercase tracking-widest text-muted">Chapters and sections</p>
+                        <p className="mt-1 text-xs text-muted">{totalCount ? "Tick one as you finish it." : "Generate a list, fetch it online, or add your own."}</p>
+                      </div>
+                      <button type="button" onClick={fetchOnlineChapters} disabled={fetching} aria-busy={fetching} className={BTN_OUTLINE}>
+                        Fetch online
+                        {fetching && <span aria-hidden="true" className="h-4 w-4 animate-spin rounded-full border-2 border-current border-r-transparent" />}
+                      </button>
+                    </div>
+
+                    {totalCount === 0 ? (
+                      <div className="mt-4 flex flex-wrap items-end gap-3">
+                        <div className="w-28">
+                          <label className="mb-1 block text-[10px] font-mono uppercase tracking-widest text-muted">How many sections</label>
+                          <input type="number" min="1" max="40" value={generateCount} onChange={e => setGenerateCount(e.target.value)} className={CHAPTER_INPUT_CLASS} />
+                        </div>
+                        <button onClick={generateChapters} className="rounded-full border border-line px-4 py-2 text-xs text-text transition hover:bg-surface2">Generate sections</button>
+                      </div>
+                    ) : (
+                      <div className="mt-2 space-y-3">
+                        {chapters.map(chapter => (
+                          <div key={chapter.id} className="group flex items-center gap-3 border-b border-line/40 py-3 transition" style={{ marginLeft: `${(chapter.depth || 0) * 12}px` }}>
+                            <button type="button" onClick={() => toggleChapter(chapter.id)} aria-label={`${chapter.done ? "Mark incomplete" : "Mark complete"}: ${chapter.title}`} aria-pressed={chapter.done} className={`grid h-9 w-9 shrink-0 place-items-center rounded-full transition ${chapter.done ? "bg-accent text-ink" : "border border-line text-muted hover:text-accent"}`}>
+                              <Check className="h-3 w-3" />
+                            </button>
+                            <span className={`flex-1 text-sm leading-snug ${chapter.done ? "text-muted line-through" : "text-text"}`}>{chapter.title}</span>
+                            <button type="button" onClick={() => removeChapter(chapter.id)} aria-label={`Remove ${chapter.title}`} className="grid h-10 w-10 shrink-0 place-items-center text-muted transition hover:text-accent">
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="mt-3 flex gap-2">
+                      <input type="text" className={CHAPTER_INPUT_CLASS} value={newChapterTitle} onChange={e => setNewChapterTitle(e.target.value)} onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addChapter())} placeholder={totalCount ? "Add another chapter" : "Add a chapter by hand"} />
+                      <button type="button" onClick={addChapter} aria-label="Add chapter" className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line text-muted transition hover:border-accent hover:text-accent"><Plus className="h-4 w-4" /></button>
+                    </div>
+
+                    {message && <p className="mt-3 text-xs text-accent">{message}</p>}
+                    {fetchError && (
+                      <div className="mt-3">
+                        <ErrorState
+                          message="Could not fetch chapters online. Try again, or add chapters by hand."
+                          onRetry={() => void fetchOnlineChapters()}
+                        />
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </div>
             </div>
-          )}
-
-          <div className="mt-3 flex gap-2">
-            <input type="text" className={INPUT_CLASS} value={newChapterTitle} onChange={e => setNewChapterTitle(e.target.value)} onKeyDown={e => e.key === "Enter" && (e.preventDefault(), addChapter())} placeholder={totalCount ? "Add another chapter" : "Add a chapter by hand"} />
-            <button onClick={addChapter} className={`${BTN_PRIMARY} shrink-0 px-4`}><Plus className="h-4 w-4" /></button>
-          </div>
-        </section>
-        {message && <p className="rounded-2xl border border-accent/25 bg-accent/[0.08] px-4 py-2.5 text-xs text-accent">{message}</p>}
-      </div>
-
-      <div className="flex items-center justify-between gap-3 border-t border-line px-6 py-4">
-        <span className="text-[11px] text-muted">Changes save as you tick them.</span>
-        <div className="flex gap-2">
-          <button onClick={onClose} className={BTN_PRIMARY}>Close</button>
-          <button onClick={() => onEdit(currentBook)} className={BTN_ACCENT}>
-            <Edit className="h-4 w-4" /> Edit book
-          </button>
-        </div>
-      </div>
-    </Modal>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
