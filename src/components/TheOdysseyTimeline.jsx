@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BookOpen, ChevronRight, X } from './Icons';
+import { BookCover } from './BookCover';
 import { useReduceMotion } from '../ui/motion';
 
 function formatEventDate(timestamp) {
@@ -136,12 +137,7 @@ export function TheOdysseyTimeline({
                       >
                         {/* Cover / Poster Thumbnail */}
                         {act.cover ? (
-                          <img
-                            src={act.cover}
-                            alt=""
-                            loading="lazy"
-                            className="h-16 w-11 rounded-lg object-cover shadow-md shrink-0 border border-line/60"
-                          />
+                          <BookCover cover={act.cover} title={act.title} author={act.author || ''} className="h-16 w-11 rounded-lg object-cover shadow-md shrink-0 border border-line/60" />
                         ) : (
                           <div className="flex h-16 w-11 shrink-0 items-center justify-center rounded-lg bg-surface2 border border-line/60 text-muted">
                             <act.Icon className="h-5 w-5 text-accent/80" />
@@ -208,7 +204,7 @@ export function TheOdysseyTimeline({
                     className="w-full text-left flex items-center gap-3.5 rounded-xl border border-line bg-surface/90 p-3.5 shadow-md hover:border-accent/40 focus:outline-none"
                   >
                     {act.cover ? (
-                      <img src={act.cover} alt="" className="h-14 w-10 rounded-md object-cover shrink-0" />
+                      <BookCover cover={act.cover} title={act.title} author={act.author || ''} className="h-14 w-10 rounded-md object-cover shrink-0" />
                     ) : (
                       <div className="flex h-14 w-10 shrink-0 items-center justify-center rounded-md bg-surface2 text-accent">
                         <act.Icon className="h-5 w-5" />
@@ -268,7 +264,7 @@ export function TheOdysseyTimeline({
                     className="w-full text-left flex items-center gap-4 rounded-xl border border-line/60 bg-ink/40 p-3.5 hover:border-accent/40 hover:bg-surface2 transition-all"
                   >
                     {act.cover ? (
-                      <img src={act.cover} alt="" className="h-14 w-10 rounded-md object-cover shrink-0" />
+                      <BookCover cover={act.cover} title={act.title} author={act.author || ''} className="h-14 w-10 rounded-md object-cover shrink-0" />
                     ) : (
                       <div className="flex h-14 w-10 shrink-0 items-center justify-center rounded-md bg-surface text-accent">
                         <act.Icon className="h-5 w-5" />

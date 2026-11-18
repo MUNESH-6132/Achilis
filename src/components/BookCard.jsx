@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cover } from './Cover';
+import { BookCover } from './BookCover';
 import { StatusPill } from './StatusPill';
 import { Stars } from './Stars';
 import { Edit } from './Icons';
@@ -37,7 +37,7 @@ export function BookCard({ book, onOpen, onEdit, selected, selectMode, onToggle 
         onClick={handleActivate}
       >
         <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg shadow-[0_15px_30px_-10px_rgba(0,0,0,0.8)]">
-          <Cover book={book} className="transition-transform duration-300 group-hover:scale-105" />
+          <BookCover book={book} title={book.title} author={(Array.isArray(book.author_name) ? book.author_name : [book.author || ""]).slice(0, 2).join(", ")} cover={book.cover} onAddCover={(url) => { const { update } = useAchilles(); update(state => ({ ...state, books: state.books.map(b => b.id === book.id ? { ...b, cover: url } : b) })); }} />
           <span
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 rounded-lg ring-1 ring-inset ring-transparent transition duration-300 group-hover:ring-accent/60"
@@ -81,19 +81,11 @@ export function BookCard({ book, onOpen, onEdit, selected, selectMode, onToggle 
             onClick={(e) => e.stopPropagation()}
             className="bg-surface/90 text-xs border border-white/10 rounded-md p-1 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-white"
           >
-            {book.category === 'movie' || book.category === 'series' ? (
-              <>
-                <option value="Watchlist">Watchlist</option>
-                <option value="In progress">In Progress</option>
-                <option value="Watched">Watched</option>
-              </>
-            ) : (
-              <>
-                <option value="Watchlist">Want to Read</option>
-                <option value="Currently Reading">Reading</option>
-                <option value="Read">Read</option>
-              </>
-            )}
+            <>
+              <option value="Watchlist">Watchlist</option>
+              <option value="Currently Reading">Currently Reading</option>
+              <option value="Read">Read</option>
+            </>
           </select>
         </>
       )}

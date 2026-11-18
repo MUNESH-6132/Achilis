@@ -1,93 +1,40 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAchilles } from '../context/AchillesContext';
+import { useAuth } from '../context/AuthContext';
 import { useReduceMotion } from '../ui/motion';
+import { useAutosave } from '../hooks/useAutosave';
 import { Pin, Check, Plus, X, ChevronRight } from './Icons';
-
-// Curated philosophical and mythological question bank
-export const CURATED_QUESTIONS = [
-  { id: 'q-arete-1', category: 'Arete · Excellence', question: 'What is one quiet standard of excellence you held yourself to today that nobody noticed?' },
-  { id: 'q-sophia-1', category: 'Sophia · Wisdom', question: 'What truth did you encounter in your recent reading or experience that lingered long after?' },
-  { id: 'q-mnemosyne-1', category: 'Mnemosyne · Memory', question: 'If today were a single paragraph in your personal Odyssey, how would you begin it?' },
-  { id: 'q-kairos-1', category: 'Kairos · Opportunity', question: 'What moment today felt worthy of slowing down and paying absolute attention to?' },
-  { id: 'q-epictetus-1', category: 'Stoic Reflection', question: 'What was outside your control today, and how did you choose to respond to it?' },
-  { id: 'q-sophrosyne-1', category: 'Sophrosyne · Balance', question: 'Where did you find genuine stillness or equilibrium amidst the noise of the day?' },
-  { id: 'q-heraclitus-1', category: 'Flux & Change', question: 'What idea or perspective have you recently changed your mind about?' },
-  { id: 'q-daimon-1', category: 'Inner Calling', question: 'Which of your actions today was most aligned with your authentic convictions?' },
-  { id: 'q-marcus-1', category: 'The Meditations', question: 'When you felt challenged or rushed, what inner principle helped steady your mind?' },
-  { id: 'q-athena-1', category: 'Athena · Craft', question: 'What did you create, read, or contemplate today that expanded your mental horizon?' },
-  { id: 'q-philia-1', category: 'Connection', question: 'Who left a quiet impression on your thoughts today, and why?' },
-  { id: 'q-moira-1', category: 'Destiny & Purpose', question: 'What boundary between patience and procrastination are you navigating right now?' },
-  { id: 'q-socrates-1', category: 'The Examined Life', question: 'What question are you living with right now that has no quick or easy answer?' },
-  { id: 'q-lethe-1', category: 'Lethe · Letting Go', question: 'What trivial worry or friction can you intentionally leave behind before tomorrow?' },
-  { id: 'q-prometheus-1', category: 'Prometheus · Spark', question: 'What sparked your curiosity or enthusiasm today, even for a brief moment?' },
-  { id: 'q-hesiod-1', category: 'Days & Works', question: 'What small ritual or routine gave you a sense of grounding and renewal today?' },
-];
-
-// Simple deterministic hash based on date string (YYYY-MM-DD)
-function hashString(str) {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
-
-// Generate deterministic daily questions
-export function getDailyQuestions(dateStr, allQuestions, pinnedIds = []) {
-  const seed = hashString(dateStr);
-  const pool = allQuestions.filter(q => !pinnedIds.includes(q.id));
-  const picked = [];
-
-  // Seeded pick
-  let currentSeed = seed;
-  for (let i = 0; i < pool.length && picked.length < 3; i++) {
-    const index = (currentSeed + i * 7) % pool.length;
-    const item = pool[index];
-    if (item && !picked.some(p => p.id === item.id)) {
-      picked.push(item);
-    }
-  }
-
-  // Pinned questions replace daily slots from the top
-  const pinnedQuestions = allQuestions.filter(q => pinnedIds.includes(q.id));
-  const result = [...pinnedQuestions.slice(0, 3)];
-  for (const q of picked) {
-    if (result.length >= 3) break;
-    if (!result.some(r => r.id === q.id)) {
-      result.push(q);
-    }
-  }
-
-  return result;
-}
+import { ORACLE_QUESTIONS, getDailyQuestions } from '../data/oracleQuestions';
 
 export function TheOracle() {
   const { data, update } = useAchilles();
+  const { user, isDemo } = useAuth();
   const reduceMotion = useReduceMotion();
+  const ownerId = isDemo ? 'demo' : user?.id || 'local';
 
   // --- Midnight Rollover: today refreshes when local calendar date changes ---
   const [today, setToday] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const rolloverTimerRef = useRef(null);
+
   useEffect(() => {
-    // Compute ms until next local midnight and reschedule
     function scheduleRollover() {
       const now = new Date();
       const msUntilMidnight =
         new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
       rolloverTimerRef.current = setTimeout(() => {
         setToday(new Date().toLocaleDateString('en-CA'));
-        rolloverTimerRef.current = scheduleRollover();
-      }, msUntilMidnight + 500); // +500ms buffer past midnight
+        scheduleRollover();
+      }, msUntilMidnight + 500); // 500ms buffer past midnight
     }
-    rolloverTimerRef.current = scheduleRollover();
+    scheduleRollover();
     return () => clearTimeout(rolloverTimerRef.current);
   }, []);
 
   // State slices
   const oracleAnswers = data.oracleAnswers || {};
-  const oraclePinned = data.oraclePinned;
-  const oracleCustom = data.oracleCustom;
+  const oraclePinned = Array.isArray(data.oraclePinned) ? data.oraclePinned : [];
+  const oracleCustom = Array.isArray(data.oracleCustom) ? data.oracleCustom : [];
 
   const [activeQuestionId, setActiveQuestionId] = useState(null);
   const [draftAnswers, setDraftAnswers] = useState({});
@@ -95,68 +42,93 @@ export function TheOracle() {
   const [showHistory, setShowHistory] = useState(false);
   const [showCustomModal, setShowCustomModal] = useState(false);
   const [customQuestionText, setCustomQuestionText] = useState('');
-  const [customCategoryText, setCustomCategoryText] = useState('Personal Inquiry');
+const [customCategoryText, setCustomCategoryText] = useState('Personal Inquiry');
 
-  const autosaveTimers = useRef({});
-  const rolloverTimerRef = useRef(null);
+  // Per-question autosave instances
+  const autosaveInstances = useRef({});
+  
+  // Track isSaving state per question for UI display
+  const isSavingRef = useRef({});
 
   // Merge curated + custom questions
   const allQuestions = useMemo(() => {
-    const custom = Array.isArray(oracleCustom) ? oracleCustom : [];
-    return [...CURATED_QUESTIONS, ...custom];
+    return [...ORACLE_QUESTIONS, ...oracleCustom];
   }, [oracleCustom]);
 
-  // Today's 3 questions
+  // Today's 3 stable questions (deterministic by date + ownerId)
   const dailyQuestions = useMemo(() => {
-    const pinned = Array.isArray(oraclePinned) ? oraclePinned : [];
-    return getDailyQuestions(today, allQuestions, pinned);
-  }, [today, allQuestions, oraclePinned]);
+    return getDailyQuestions(today, allQuestions, oraclePinned, ownerId);
+  }, [today, allQuestions, oraclePinned, ownerId]);
 
-  // Handle Answer Draft Change with Debounced Autosave
+  // Debounced autosave per question (TASK 6)
   const handleAnswerChange = useCallback((qId, value) => {
+    // Immediately update draft answer for UI responsiveness
     setDraftAnswers(prev => ({ ...prev, [qId]: value }));
-    setSaveStatus(prev => ({ ...prev, [qId]: 'Saving…' }));
 
-    if (autosaveTimers.current[qId]) {
-      clearTimeout(autosaveTimers.current[qId]);
+    // Trigger debounced autosave via hook (1.2s delay)
+    const instance = autosaveInstances.current[qId];
+    if (instance) {
+      instance(value);
+      // Track isSaving state for UI display
+      isSavingRef.current[qId] = instance.isSaving;
     }
+  }, []);
 
-    autosaveTimers.current[qId] = setTimeout(() => {
-      const now = Date.now();
-      try {
-        update(state => ({
-          ...state,
-          oracleAnswers: {
-            ...(state.oracleAnswers || {}),
-            [qId]: {
-              answer: value,
-              date: today,
-              updatedAt: now,
+  // Initialize autosave instances for each daily question
+  useEffect(() => {
+    const newInstances = {};
+    dailyQuestions.forEach(q => {
+      newInstances[q.id] = (value) => {
+        const now = Date.now();
+        try {
+          update(state => ({
+            ...state,
+            oracleAnswers: {
+              ...(state.oracleAnswers || {}),
+              [qId]: {
+                answer: value,
+                date: today,
+                updatedAt: now,
+              },
             },
-          },
-        }));
-        setSaveStatus(prev => ({ ...prev, [qId]: 'Saved' }));
-      } catch (saveError) {
-        console.error('Oracle autosave failed:', saveError);
-        setSaveStatus(prev => ({ ...prev, [qId]: 'Error saving' }));
-      }
-      setTimeout(() => {
-        setSaveStatus(prev => ({ ...prev, [qId]: '' }));
-      }, 2000);
-    }, 600);
-  }, [update, today]);
+          }));
+          setSaveStatus(prev => ({ ...prev, [qId]: 'Saved' }));
+        } catch (saveError) {
+          console.error('Oracle autosave failed:', saveError);
+          setSaveStatus(prev => ({ ...prev, [qId]: 'Error saving' }));
+        }
+        // Clear save status after 2s
+        setTimeout(() => {
+          setSaveStatus(prev => ({ ...prev, [qId]: '' }));
+        }, 2000);
+      };
+      autosaveInstances.current[q.id] = newInstances[q.id];
+    });
+    // Cleanup on unmount / question change
+    return () => {
+      Object.keys(autosaveInstances.current).forEach(key => {
+        delete autosaveInstances.current[key];
+      });
+    };
+  }, [dailyQuestions, update, today]);
 
-  // Toggle Pin/Favorite
-  const togglePin = (qId, e) => {
+  // Toggle Pin/Bookmark
+  const togglePin = useCallback((qId, e) => {
     e.stopPropagation();
     update(state => {
       const current = Array.isArray(state.oraclePinned) ? state.oraclePinned : [];
       const next = current.includes(qId)
         ? current.filter(id => id !== qId)
         : [...current, qId];
+
+      try {
+        localStorage.setItem('achilles:oraclePinned', JSON.stringify(next));
+      } catch {
+        // Safe fallback if storage quota exceeded
+      }
       return { ...state, oraclePinned: next };
     });
-  };
+  }, [update]);
 
   // Add Custom Question
   const handleAddCustomQuestion = (e) => {
@@ -192,7 +164,7 @@ export function TheOracle() {
         };
       })
       .filter(item => item.answer && item.answer.trim().length > 0)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
   }, [oracleAnswers, allQuestions]);
 
   return (
@@ -209,7 +181,7 @@ export function TheOracle() {
             Three Questions for Today
           </h2>
           <p className="mt-1 text-xs text-muted max-w-xl leading-relaxed">
-            Consistent throughout the day. Pin meaningful inquiries, author your own, and reflect quietly.
+            Consistent throughout your day. Pin meaningful inquiries, author your own, and reflect quietly.
           </p>
         </div>
 
@@ -236,7 +208,7 @@ export function TheOracle() {
 
       {/* Daily 3 Questions Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {dailyQuestions.map((q, idx) => {
+        {dailyQuestions.map((q) => {
           const isPinned = oraclePinned.includes(q.id);
           const isOpen = activeQuestionId === q.id;
           const currentAnswer = draftAnswers[q.id] !== undefined
@@ -282,8 +254,8 @@ export function TheOracle() {
                   </button>
                 </div>
 
-                {/* Question Text */}
-                <h3 className="font-serif text-base leading-snug text-text mb-4">
+                {/* Question Text (clean Inter font-sans for modern editorial aesthetic) */}
+                <h3 className="font-sans text-base leading-relaxed text-text font-normal mb-4">
                   "{q.question}"
                 </h3>
               </div>
@@ -319,7 +291,7 @@ export function TheOracle() {
                         className="w-full rounded-xl border border-line bg-ink/50 p-3 text-xs leading-relaxed text-text placeholder:text-muted/60 focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none transition-colors"
                       />
                       <div className="flex items-center justify-between mt-2 text-[10px] font-mono text-muted">
-                        <span>{status ? <span className="text-accent">{status}</span> : hasAnswer ? 'Saved to your universe' : 'Autosaves as you type'}</span>
+                        <span>{isSavingRef.current[q.id] ? 'Saving…' : hasAnswer ? 'Saved to your universe' : 'Autosaves as you type'}</span>
                         <span>{currentAnswer.length} chars</span>
                       </div>
                     </motion.div>
@@ -340,7 +312,7 @@ export function TheOracle() {
             exit={reduceMotion ? undefined : { opacity: 0, y: 10 }}
             className="mt-8 rounded-2xl border border-line bg-surface/70 p-6 backdrop-blur-md"
           >
-            <h4 className="font-serif text-lg text-text font-semibold mb-4 flex items-center justify-between">
+            <h4 className="font-display text-lg text-text font-semibold mb-4 flex items-center justify-between">
               <span>Historical Reflections</span>
               <span className="font-mono text-xs font-normal text-muted">{answeredHistory.length} recorded</span>
             </h4>
@@ -351,7 +323,7 @@ export function TheOracle() {
                     <span className="text-[10px] font-mono uppercase tracking-wider text-accent font-semibold">{item.category}</span>
                     <span className="text-[10px] font-mono text-muted">{item.date}</span>
                   </div>
-                  <p className="font-serif text-sm text-text font-medium mb-2">"{item.question}"</p>
+                  <p className="font-sans text-sm text-text font-medium mb-2 leading-relaxed">"{item.question}"</p>
                   <p className="text-xs text-muted/90 leading-relaxed bg-ink/40 rounded-xl p-3 border border-line/40">
                     {item.answer}
                   </p>
@@ -373,7 +345,7 @@ export function TheOracle() {
               className="w-full max-w-md rounded-2xl border border-line bg-surface p-6 shadow-2xl"
             >
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-serif text-lg font-bold text-text">Add Custom Reflection Prompt</h3>
+                <h3 className="font-display text-lg font-bold text-text">Add Custom Reflection Prompt</h3>
                 <button
                   type="button"
                   onClick={() => setShowCustomModal(false)}

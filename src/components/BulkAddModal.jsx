@@ -5,6 +5,7 @@ import { Cover } from './Cover';
 import { Search, X } from './Icons';
 import { generateId } from '../utils/helpers';
 import { searchOpenLibrary } from '../utils/api';
+import { humanizeApiError } from '../utils/errors';
 
 const MIN_QUERY_LENGTH = 3;
 
@@ -84,16 +85,7 @@ const runSearch = useCallback(async (value) => {
     } catch (err) {
       if (requestId !== requestRef.current) return;
       setResults([]);
-      console.error("[BulkAddModal] Open Library search failed:", err);
-      let message;
-      if (err.name === "AbortError") {
-        message = "Search timed out. Please try a shorter query or check your connection.";
-      } else if (err.message && err.message.includes("429")) {
-        message = "Slow down — try again in a few seconds.";
-      } else {
-        message = err?.message || "Could not search Open Library. Check your connection and try again.";
-      }
-      setError(message);
+      setError(humanizeApiError(err).message);
     } finally {
       if (requestId === requestRef.current) setLoading(false);
     }

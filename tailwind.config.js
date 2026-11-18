@@ -22,8 +22,8 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
-        display: ['Inter Display', 'Inter', 'sans-serif'],
-        serif: ['Cinzel', 'Playfair Display', 'Georgia', 'serif'],
+        display: ['Space Grotesk', 'Inter Display', 'Inter', 'sans-serif'],
+        serif: ['Space Grotesk', 'Inter Display', 'sans-serif'],
         mono: ['Fragment Mono', 'monospace'],
       },
     },

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useReduceMotion } from '../ui/motion';
 import { Logo } from './Logo';
 import { LogoWordmark } from './Logo';
 import { UserMenu } from './UserMenu';
@@ -33,6 +34,7 @@ export function HeaderNav({
   onExitDemo,
   onSettings,
 }) {
+  const reduceMotion = useReduceMotion();
   const clock = useMinuteClock();
 
   // Greeting based on current hour
@@ -124,9 +126,9 @@ export function HeaderNav({
 
               {item.active && (
                 <motion.div
-                  layoutId="activeNavIndicator"
+                  layoutId={reduceMotion ? undefined : "activeNavIndicator"}
                   className="absolute bottom-0 left-1/2 transform -translate-x-1/2 h-[2px] bg-accent rounded-full"
-                  transition={{ duration: 0.25, ease: 'easeInOut' }}
+                  transition={reduceMotion ? { duration: 0 } : { duration: 0.25, ease: 'easeInOut' }}
                 />
               )}
             </button>

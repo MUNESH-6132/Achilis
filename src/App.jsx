@@ -18,7 +18,8 @@ import { Toast } from './ui/Toast';
 import { Button } from './ui/Primitives';
 import { MotionPreferenceContext, useReduceMotion } from './ui/motion';
 import { HeaderNav } from './components/HeaderNav';
-import { QuickAddHermes } from './components/QuickAddHermes';
+import { HermesQuickAdd } from './components/HermesQuickAdd';
+import { AddContentModal } from './components/AddContentModal';
 import { HelmetLogo } from './components/HelmetLogo';
 
 const LockScreen = () => {
@@ -157,6 +158,7 @@ const AppContent = () => {
   const [diaryPromptRequest, setDiaryPromptRequest] = useState(null);
   const [referenceRequest, setReferenceRequest] = useState(null);
   const [requestAddBook, setRequestAddBook] = useState(false);
+  const [quickAddType, setQuickAddType] = useState(null);
   const [search, setSearch] = useState('');
   const [focusSearchRequested, setFocusSearchRequested] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
@@ -451,12 +453,18 @@ const AppContent = () => {
         </AnimatePresence>
       </main>
 
-      {/* Hermes Quick Add Speed Dial */}
-      <QuickAddHermes
-        onAddBook={() => navigate('collection', 'books', true)}
-        onAddMovie={() => navigate('collection', 'screen')}
-        onAddJournal={() => navigate('journal', 'diary')}
+      {/* Hermes Floating Speed-Dial */}
+      <HermesQuickAdd
+        onSelectType={type => setQuickAddType(type)}
       />
+
+      {/* Unified Add Content Modal */}
+      {quickAddType && (
+        <AddContentModal
+          initialType={quickAddType}
+          onClose={() => setQuickAddType(null)}
+        />
+      )}
 
       <nav className="fixed inset-x-0 bottom-0 z-[35] flex justify-center bg-ink/90 backdrop-blur-md border-t border-line px-3 pb-[env(safe-area-inset-bottom)] pt-2 lg:hidden" aria-label="Primary">
         <div className="flex max-w-full items-center justify-center gap-1 rounded-full bg-surface/90 px-2 py-1 shadow-xl backdrop-blur-sm border border-line">

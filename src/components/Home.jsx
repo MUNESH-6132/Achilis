@@ -7,7 +7,7 @@ import { useReduceMotion } from '../ui/motion';
 import { BookOpen, Film, Edit, Check } from './Icons';
 import { BookDetails } from './BookDetails';
 import { OlympusHero } from './OlympusHero';
-import { WeeklyReadingActivity } from './WeeklyReadingActivity';
+import { WeeklyActivityStrip } from './WeeklyActivityStrip';
 import { TheOdysseyTimeline } from './TheOdysseyTimeline';
 import { TheOracle } from './TheOracle';
 
@@ -65,13 +65,51 @@ export function Home({ onGo, onAddBook, ambientMode = false }) {
   const habits = habitRecords?.habits?.length ? habitRecords.habits : legacyTrackers;
   const habitLogs = habitRecords?.logs?.length ? habitRecords.logs : legacyLogs;
 
+  // Genuine reading statistics for Olympus Hero
+  const { readingStreak, booksFinishedThisYear } = useMemo(() => {
+    const currentYear = String(new Date().getFullYear());
+    const finishedThisYear = books.filter(b =>
+      b.status === 'Read' &&
+      String(b.finishedAt || b.readAt || b.completedAt || b.updatedAt || '').slice(0, 4) === currentYear
+    ).length;
+
+    // Genuine reading activity dates
+    const activityDates = new Set();
+    (Array.isArray(data.pomo) ? data.pomo : []).forEach(p => p.date && activityDates.add(p.date));
+    (Array.isArray(habitLogs) ? habitLogs : []).forEach(l => {
+      const d = l.date || (l.created_at ? l.created_at.slice(0, 10) : '');
+      if (d && l.status !== 'skipped' && l.status !== 'rest') activityDates.add(d);
+    });
+    books.forEach(b => {
+      if (b.status === 'Currently Reading' && b.updatedAt && Number(b.currentPage) > 0) {
+        activityDates.add(new Date(b.updatedAt).toISOString().slice(0, 10));
+      }
+      const finishDate = String(b.finishedAt || b.readAt || b.completedAt || '').slice(0, 10);
+      if (finishDate) activityDates.add(finishDate);
+    });
+
+    // Consecutive daily streak
+    let streak = 0;
+    const cursor = new Date();
+    const todayStr = cursor.toISOString().slice(0, 10);
+    if (!activityDates.has(todayStr)) {
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    while (activityDates.has(cursor.toISOString().slice(0, 10))) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+
+    return { readingStreak: streak, booksFinishedThisYear: finishedThisYear };
+  }, [books, habitLogs, data.pomo]);
+
   // Compile The Odyssey Timeline activities from real user data
   const odysseyActivities = useMemo(() => {
     const list = [];
 
     // 1. Books
     books.forEach(b => {
-      const createdTime = getTimestamp(b.createdAt || b.date);
+      const createdTime = getTimestamp(b.createdAt || b.date || b.updatedAt);
       if (createdTime) {
         list.push({
           id: b.id,
@@ -213,17 +251,20 @@ export function Home({ onGo, onAddBook, ambientMode = false }) {
       <OlympusHero
         books={books}
         screens={screens}
+        streak={readingStreak}
+        booksFinishedThisYear={booksFinishedThisYear}
         onOpenBook={book => setSelectedBook(book)}
-        onContinueReading={book => setSelectedBook(book)}
+        onAddBook={onAddBook}
         onGoLibrary={() => onGo('collection', 'books')}
       />
 
-      {/* 2. Weekly Reading Activity Strip */}
+      {/* 2. Weekly Activity Strip */}
       <div className="mb-14">
-        <WeeklyReadingActivity
+        <WeeklyActivityStrip
           books={books}
           habits={habits}
           habitLogs={habitLogs}
+          pomo={data.pomo}
           diary={diary}
         />
       </div>
